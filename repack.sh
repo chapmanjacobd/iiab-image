@@ -97,18 +97,16 @@ fi
 # Unmount all filesystems
 echo "Unmounting filesystems..."
 
-# Unmount chroot mounts if they exist
-for mp in "$MOUNT_DIR/dev/pts" "$MOUNT_DIR/dev" "$MOUNT_DIR/proc" "$MOUNT_DIR/sys"; do
-    if mountpoint -q "$mp" 2>/dev/null; then
-        unmount_with_retries "$mp"
-    fi
-done
-
-# Unmount boot and root
+# systemd-nspawn doesn't leave mounts behind, so we only need to unmount boot and root
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
-    unmount_with_retries "$MOUNT_DIR/boot"
+    if mountpoint -q "$MOUNT_DIR/boot" 2>/dev/null; then
+        unmount_with_retries "$MOUNT_DIR/boot"
+    fi
 fi
-unmount_with_retries "$MOUNT_DIR"
+
+if mountpoint -q "$MOUNT_DIR" 2>/dev/null; then
+    unmount_with_retries "$MOUNT_DIR"
+fi
 
 # Optimize partition size if requested
 if [[ "$OPTIMIZE" == "yes" || "$OPTIMIZE" == "true" ]]; then

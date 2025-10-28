@@ -1,3 +1,4 @@
+.#mnt.lck
 *.state
 *.img
 *.img.xz

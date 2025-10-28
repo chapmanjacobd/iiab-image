@@ -23,56 +23,15 @@ echo "Mount point: $MOUNT_DIR"
 echo "Command: $COMMAND"
 echo ""
 
-# Setup chroot environment (always check actual mount status)
-echo "Setting up chroot environment..."
-
-# Mount proc, sys, dev if not already mounted
-if ! mountpoint -q "$MOUNT_DIR/proc" 2>/dev/null; then
-    echo "Mounting /proc..."
-    sudo mount --bind /proc "$MOUNT_DIR/proc"
-else
-    echo "/proc already mounted"
+# Install systemd-nspawn if not available
+if ! command -v systemd-nspawn &> /dev/null; then
+    echo "Installing systemd-container..."
+    sudo apt-get update
+    sudo apt-get install -y systemd-container
 fi
 
-if ! mountpoint -q "$MOUNT_DIR/sys" 2>/dev/null; then
-    echo "Mounting /sys..."
-    sudo mount --bind /sys "$MOUNT_DIR/sys"
-else
-    echo "/sys already mounted"
-fi
-
-if ! mountpoint -q "$MOUNT_DIR/dev" 2>/dev/null; then
-    echo "Mounting /dev..."
-    sudo mount --bind /dev "$MOUNT_DIR/dev"
-else
-    echo "/dev already mounted"
-fi
-
-if ! mountpoint -q "$MOUNT_DIR/dev/pts" 2>/dev/null; then
-    echo "Mounting /dev/pts..."
-    sudo mount --bind /dev/pts "$MOUNT_DIR/dev/pts"
-else
-    echo "/dev/pts already mounted"
-fi
-
-# Backup and setup resolv.conf
-if [ ! -f "$MOUNT_DIR/etc/_resolv.conf" ] && [ -f "$MOUNT_DIR/etc/resolv.conf" ]; then
-    echo "Backing up resolv.conf..."
-    sudo cp "$MOUNT_DIR/etc/resolv.conf" "$MOUNT_DIR/etc/_resolv.conf"
-    sudo cp /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
-else
-    # Update resolv.conf even if backup exists (may be stale)
-    if [ -f "$MOUNT_DIR/etc/resolv.conf" ]; then
-        sudo cp /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
-    fi
-fi
-
-# Disable ld.so.preload if it exists (can break QEMU)
-if [ -f "$MOUNT_DIR/etc/ld.so.preload" ] && [ ! -f "$MOUNT_DIR/etc/_ld.so.preload" ]; then
-    echo "Disabling ld.so.preload..."
-    sudo cp "$MOUNT_DIR/etc/ld.so.preload" "$MOUNT_DIR/etc/_ld.so.preload"
-    sudo sh -c "echo > '$MOUNT_DIR/etc/ld.so.preload'"
-fi
+# Setup environment for ARM emulation
+echo "Setting up ARM emulation environment..."
 
 # Copy QEMU static binaries if available
 if [ -f /usr/bin/qemu-arm-static ] && [ ! -f "$MOUNT_DIR/usr/bin/qemu-arm-static" ]; then
@@ -85,7 +44,19 @@ if [ -f /usr/bin/qemu-aarch64-static ] && [ ! -f "$MOUNT_DIR/usr/bin/qemu-aarch6
     sudo cp /usr/bin/qemu-aarch64-static "$MOUNT_DIR/usr/bin/"
 fi
 
-echo "Chroot environment ready"
+# Backup and setup resolv.conf
+if [ ! -f "$MOUNT_DIR/etc/_resolv.conf" ] && [ -f "$MOUNT_DIR/etc/resolv.conf" ]; then
+    echo "Backing up resolv.conf..."
+    sudo cp "$MOUNT_DIR/etc/resolv.conf" "$MOUNT_DIR/etc/_resolv.conf"
+    sudo cp /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
+else
+    # Update resolv.conf (may be stale)
+    if [ -f "$MOUNT_DIR/etc/resolv.conf" ]; then
+        sudo cp /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
+    fi
+fi
+
+echo "Environment ready"
 echo ""
 
 # Function to cleanup on exit
@@ -98,14 +69,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Enter chroot
-echo "=========================================="
-echo "Entering chroot environment..."
-echo "=========================================="
-echo ""
-
 # Detect architecture
-ARCH=$(sudo chroot "$MOUNT_DIR" uname -m 2>/dev/null || echo "unknown")
+ARCH=$(sudo systemd-nspawn -q -D "$MOUNT_DIR" uname -m 2>/dev/null || echo "unknown")
 case "$ARCH" in
     armv7l|armv6l)
         echo "Detected ARM 32-bit architecture"
@@ -127,19 +92,38 @@ case "$ARCH" in
 esac
 echo ""
 
-# Execute command in chroot
+# Enter container with systemd-nspawn
+echo "=========================================="
+echo "Entering container with systemd-nspawn..."
+echo "=========================================="
+echo ""
+
+# Build systemd-nspawn options
+NSPAWN_OPTS=(
+    -q                      # Quiet
+    -D "$MOUNT_DIR"         # Directory
+    --resolv-conf=replace-host  # Use host DNS
+    # --boot                   # Isolate systemd
+)
+
+# Execute command in container
 if [ "$COMMAND" = "/bin/bash" ] || [ "$COMMAND" = "bash" ]; then
     echo "Starting interactive shell..."
-    echo "Type 'exit' to return to host system"
+    echo "Type 'exit' or Ctrl+] three times to return to host system"
     echo ""
-    sudo chroot "$MOUNT_DIR" /bin/bash
+    echo "Note: systemd services are available!"
+    echo "  - systemctl status"
+    echo "  - systemctl enable/disable <service>"
+    echo "  - journalctl (for logs)"
+    echo ""
+    sudo systemd-nspawn "${NSPAWN_OPTS[@]}" /bin/bash
 else
     echo "Executing: $COMMAND"
     echo ""
-    sudo chroot "$MOUNT_DIR" /bin/bash -c "$COMMAND"
+    sudo systemd-nspawn "${NSPAWN_OPTS[@]}" /bin/bash -c "$COMMAND"
 fi
 
 echo ""
 echo "=========================================="
-echo "Exited chroot environment"
+echo "Exited container"
 echo "=========================================="
