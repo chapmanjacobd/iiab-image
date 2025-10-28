@@ -1,0 +1,4 @@
+*.state
+*.img
+*.img.xz
+/mnt/

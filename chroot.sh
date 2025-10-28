@@ -23,69 +23,70 @@ echo "Mount point: $MOUNT_DIR"
 echo "Command: $COMMAND"
 echo ""
 
-# Check if already setup
-CHROOT_STATE="${STATE_FILE}.chroot"
-NEEDS_SETUP=true
-if [ -f "$CHROOT_STATE" ]; then
-    echo "Chroot environment already set up"
-    NEEDS_SETUP=false
+# Setup chroot environment (always check actual mount status)
+echo "Setting up chroot environment..."
+
+# Mount proc, sys, dev if not already mounted
+if ! mountpoint -q "$MOUNT_DIR/proc" 2>/dev/null; then
+    echo "Mounting /proc..."
+    sudo mount --bind /proc "$MOUNT_DIR/proc"
+else
+    echo "/proc already mounted"
 fi
 
-# Setup chroot environment
-if [ "$NEEDS_SETUP" = true ]; then
-    echo "Setting up chroot environment..."
+if ! mountpoint -q "$MOUNT_DIR/sys" 2>/dev/null; then
+    echo "Mounting /sys..."
+    sudo mount --bind /sys "$MOUNT_DIR/sys"
+else
+    echo "/sys already mounted"
+fi
 
-    # Mount proc, sys, dev if not already mounted
-    if ! mountpoint -q "$MOUNT_DIR/proc" 2>/dev/null; then
-        echo "Mounting /proc..."
-        sudo mount --bind /proc "$MOUNT_DIR/proc"
-    fi
+if ! mountpoint -q "$MOUNT_DIR/dev" 2>/dev/null; then
+    echo "Mounting /dev..."
+    sudo mount --bind /dev "$MOUNT_DIR/dev"
+else
+    echo "/dev already mounted"
+fi
 
-    if ! mountpoint -q "$MOUNT_DIR/sys" 2>/dev/null; then
-        echo "Mounting /sys..."
-        sudo mount --bind /sys "$MOUNT_DIR/sys"
-    fi
+if ! mountpoint -q "$MOUNT_DIR/dev/pts" 2>/dev/null; then
+    echo "Mounting /dev/pts..."
+    sudo mount --bind /dev/pts "$MOUNT_DIR/dev/pts"
+else
+    echo "/dev/pts already mounted"
+fi
 
-    if ! mountpoint -q "$MOUNT_DIR/dev" 2>/dev/null; then
-        echo "Mounting /dev..."
-        sudo mount --bind /dev "$MOUNT_DIR/dev"
-    fi
-
-    if ! mountpoint -q "$MOUNT_DIR/dev/pts" 2>/dev/null; then
-        echo "Mounting /dev/pts..."
-        sudo mount --bind /dev/pts "$MOUNT_DIR/dev/pts"
-    fi
-
-    # Backup and setup resolv.conf
-    if [ ! -f "$MOUNT_DIR/etc/_resolv.conf" ] && [ -f "$MOUNT_DIR/etc/resolv.conf" ]; then
-        echo "Backing up resolv.conf..."
-        sudo cp "$MOUNT_DIR/etc/resolv.conf" "$MOUNT_DIR/etc/_resolv.conf"
+# Backup and setup resolv.conf
+if [ ! -f "$MOUNT_DIR/etc/_resolv.conf" ] && [ -f "$MOUNT_DIR/etc/resolv.conf" ]; then
+    echo "Backing up resolv.conf..."
+    sudo cp "$MOUNT_DIR/etc/resolv.conf" "$MOUNT_DIR/etc/_resolv.conf"
+    sudo cp /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
+else
+    # Update resolv.conf even if backup exists (may be stale)
+    if [ -f "$MOUNT_DIR/etc/resolv.conf" ]; then
         sudo cp /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
     fi
-
-    # Disable ld.so.preload if it exists (can break QEMU)
-    if [ -f "$MOUNT_DIR/etc/ld.so.preload" ] && [ ! -f "$MOUNT_DIR/etc/_ld.so.preload" ]; then
-        echo "Disabling ld.so.preload..."
-        sudo cp "$MOUNT_DIR/etc/ld.so.preload" "$MOUNT_DIR/etc/_ld.so.preload"
-        sudo sh -c "echo > '$MOUNT_DIR/etc/ld.so.preload'"
-    fi
-
-    # Copy QEMU static binaries if available
-    if [ -f /usr/bin/qemu-arm-static ] && [ ! -f "$MOUNT_DIR/usr/bin/qemu-arm-static" ]; then
-        echo "Copying qemu-arm-static..."
-        sudo cp /usr/bin/qemu-arm-static "$MOUNT_DIR/usr/bin/"
-    fi
-
-    if [ -f /usr/bin/qemu-aarch64-static ] && [ ! -f "$MOUNT_DIR/usr/bin/qemu-aarch64-static" ]; then
-        echo "Copying qemu-aarch64-static..."
-        sudo cp /usr/bin/qemu-aarch64-static "$MOUNT_DIR/usr/bin/"
-    fi
-
-    # Mark as setup
-    touch "$CHROOT_STATE"
-    echo "Chroot environment setup complete"
-    echo ""
 fi
+
+# Disable ld.so.preload if it exists (can break QEMU)
+if [ -f "$MOUNT_DIR/etc/ld.so.preload" ] && [ ! -f "$MOUNT_DIR/etc/_ld.so.preload" ]; then
+    echo "Disabling ld.so.preload..."
+    sudo cp "$MOUNT_DIR/etc/ld.so.preload" "$MOUNT_DIR/etc/_ld.so.preload"
+    sudo sh -c "echo > '$MOUNT_DIR/etc/ld.so.preload'"
+fi
+
+# Copy QEMU static binaries if available
+if [ -f /usr/bin/qemu-arm-static ] && [ ! -f "$MOUNT_DIR/usr/bin/qemu-arm-static" ]; then
+    echo "Copying qemu-arm-static..."
+    sudo cp /usr/bin/qemu-arm-static "$MOUNT_DIR/usr/bin/"
+fi
+
+if [ -f /usr/bin/qemu-aarch64-static ] && [ ! -f "$MOUNT_DIR/usr/bin/qemu-aarch64-static" ]; then
+    echo "Copying qemu-aarch64-static..."
+    sudo cp /usr/bin/qemu-aarch64-static "$MOUNT_DIR/usr/bin/"
+fi
+
+echo "Chroot environment ready"
+echo ""
 
 # Function to cleanup on exit
 cleanup() {

@@ -17,12 +17,10 @@ download_file() {
     local output="$2"
 
     echo "Downloading from $url..."
-    if command -v wget &> /dev/null; then
-        wget --progress=bar:force -O "$output" "$url"
-    elif command -v curl &> /dev/null; then
+    if command -v curl &> /dev/null; then
         curl -L --progress-bar -o "$output" "$url"
     else
-        echo "Error: wget or curl is required to download files" >&2
+        echo "Error: curl is required to download files" >&2
         exit 1
     fi
 }
@@ -44,10 +42,22 @@ wait_for_file() {
     compgen -G "$pattern"
 }
 
-# Determine if input is URL or local file
 if [[ "$IMAGE_SOURCE" =~ ^https?:// ]]; then
-    echo "Input is a URL"
-    DOWNLOAD_FILE="$(mktemp -u).img.xz"
+
+    BASE_FILENAME=$(basename "$IMAGE_SOURCE")
+    # clean up any URL query parameters (e.g., remove ?param=value)
+    CLEANED_FILENAME=$(echo "$BASE_FILENAME" | sed 's/\?.*$//')
+    # use the cleaned filename for the download, ensuring it's not empty
+    if [[ -z "$CLEANED_FILENAME" || "$CLEANED_FILENAME" == "/" ]]; then
+        # Fallback if URL is just a domain or ends in a slash
+        DOWNLOAD_FILE="latest.img.xz"
+    elif [[ "$CLEANED_FILENAME" == *.img.xz ]]; then
+        DOWNLOAD_FILE="$CLEANED_FILENAME"
+    else
+        # Append the desired suffix
+        DOWNLOAD_FILE="${CLEANED_FILENAME}.img.xz"
+    fi
+
     trap "rm -f '$DOWNLOAD_FILE'" EXIT
     download_file "$IMAGE_SOURCE" "$DOWNLOAD_FILE"
     XZ_FILE="$DOWNLOAD_FILE"
@@ -162,6 +172,6 @@ echo "Loop device: $LOOPDEV"
 echo "Mount point: $MOUNT_DIR"
 echo "State file: $STATE_FILE"
 echo ""
-echo "To chroot into image: ./chroot-image.sh $STATE_FILE"
-echo "To repack, run: ./repack-image.sh $STATE_FILE"
+echo "To chroot into image: ./chroot.sh $STATE_FILE"
+echo "To repack, run: ./repack.sh $STATE_FILE"
 echo "=========================================="

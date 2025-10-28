@@ -25,26 +25,23 @@ echo "Loop device: $LOOPDEV"
 echo "Mount point: $MOUNT_DIR"
 echo "Image file: $IMG_FILE"
 
-# Cleanup chroot environment if it was setup
-CHROOT_STATE="${STATE_FILE}.chroot"
-if [ -f "$CHROOT_STATE" ]; then
-    echo "Cleaning up chroot environment..."
+# Cleanup chroot environment files (check if they actually exist first)
+echo "Cleaning up chroot environment..."
 
-    # Remove QEMU binaries
-    sudo rm -f "$MOUNT_DIR/usr/bin/qemu-arm-static" 2>/dev/null || true
-    sudo rm -f "$MOUNT_DIR/usr/bin/qemu-aarch64-static" 2>/dev/null || true
+# Remove QEMU binaries
+sudo rm -f "$MOUNT_DIR/usr/bin/qemu-arm-static" 2>/dev/null || true
+sudo rm -f "$MOUNT_DIR/usr/bin/qemu-aarch64-static" 2>/dev/null || true
 
-    # Restore resolv.conf
-    if [ -f "$MOUNT_DIR/etc/_resolv.conf" ]; then
-        sudo mv "$MOUNT_DIR/etc/_resolv.conf" "$MOUNT_DIR/etc/resolv.conf"
-    fi
+# Restore resolv.conf if backup exists
+if [ -f "$MOUNT_DIR/etc/_resolv.conf" ]; then
+    echo "Restoring resolv.conf..."
+    sudo mv "$MOUNT_DIR/etc/_resolv.conf" "$MOUNT_DIR/etc/resolv.conf"
+fi
 
-    # Restore ld.so.preload
-    if [ -f "$MOUNT_DIR/etc/_ld.so.preload" ]; then
-        sudo mv "$MOUNT_DIR/etc/_ld.so.preload" "$MOUNT_DIR/etc/ld.so.preload"
-    fi
-
-    rm -f "$CHROOT_STATE"
+# Restore ld.so.preload if backup exists
+if [ -f "$MOUNT_DIR/etc/_ld.so.preload" ]; then
+    echo "Restoring ld.so.preload..."
+    sudo mv "$MOUNT_DIR/etc/_ld.so.preload" "$MOUNT_DIR/etc/ld.so.preload"
 fi
 
 # Function to unmount with retries
