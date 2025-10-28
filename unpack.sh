@@ -6,7 +6,7 @@ DEFAULT_URL="https://downloads.raspberrypi.org/raspios_lite_arm64_latest"
 
 # Parse arguments
 IMAGE_SOURCE="${1:-$DEFAULT_URL}"
-ADDITIONAL_MB="${2:-0}"
+ADDITIONAL_MB="${2:-22000}"
 ROOT_PARTITION="${3:-2}"
 BOOT_PARTITION="${4:-1}"
 MOUNT_BASE="${5:-./mnt}"
