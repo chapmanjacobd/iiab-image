@@ -12,7 +12,6 @@ if [ ! -f "$STATE_FILE" ]; then
 fi
 
 # Load state
-echo "Loading state from $STATE_FILE..."
 source "$STATE_FILE"
 
 # Verify required variables
