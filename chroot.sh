@@ -53,6 +53,7 @@ NSPAWN_OPTS=(
     -D "$MOUNT_DIR"             # Directory
     --resolv-conf=replace-host  # Use host DNS
     # --boot                    # Isolate systemd
+    --background=""             # disable nspawn terminal coloring
 )
 
 if [ "$COMMAND" = "/bin/bash" ] || [ "$COMMAND" = "bash" ]; then
