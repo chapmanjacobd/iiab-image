@@ -45,7 +45,7 @@ unmount_with_retries() {
         sudo fuser -ck "$mountpoint" 2>/dev/null || true
         sleep 1
     done
-    echo "Successfully unmounted $mountpoint"
+    echo "Unmounted $mountpoint"
 }
 
 # Cleanup nspawn environment files if they exist

@@ -69,7 +69,7 @@ unmount_with_retries() {
         sudo fuser -ck "$mountpoint" 2>/dev/null || true
         sleep 1
     done
-    echo "Successfully unmounted $mountpoint"
+    echo "Unmounted $mountpoint"
 }
 
 # Optimize image if requested

@@ -7,8 +7,8 @@ DEFAULT_URL="https://downloads.raspberrypi.org/raspios_lite_arm64_latest"
 # Parse arguments
 IMAGE_SOURCE="${1:-$DEFAULT_URL}"
 ADDITIONAL_MB="${2:-22000}"
-BOOT_PARTITION="${3:-1}"
-ROOT_PARTITION="${4:-2}"
+BOOT_PARTITION="${3:-}"
+ROOT_PARTITION="${4:-}"
 MOUNT_BASE="${5:-./mnt}"
 
 download_file() {
@@ -58,7 +58,7 @@ if [[ "$IMAGE_SOURCE" =~ ^https?:// ]]; then
     BASE_FILENAME=$(basename "$IMAGE_SOURCE")
 
     # clean up any URL query parameters (e.g., remove ?param=value)
-    CLEANED_FILENAME=$(echo "$BASE_FILENAME" | sed 's/\?.*$//' | sed 's/\.raw\.*$/.img\./')
+    CLEANED_FILENAME=$(echo "$BASE_FILENAME" | sed 's/\?.*$//' | sed 's/\.raw/.img/')
     if [[ -z "$CLEANED_FILENAME" || "$CLEANED_FILENAME" == "/" ]]; then
         # Fallback if URL is just a domain or ends in a slash
         DOWNLOAD_FILE="latest.img.xz"
@@ -92,6 +92,41 @@ else
     IMG_FILE="$XZ_FILE"
 fi
 
+if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
+    echo "Partition numbers not explicity set. Attempting to auto-detect using parted on $IMG_FILE..." >&2
+    json_output=$(parted --script "$IMG_FILE" unit B print --json 2>/dev/null)
+
+    json_input=$(echo "$json_output" | jq '.disk.partitions' 2>/dev/null)
+    if [[ -z "$json_input" || "$json_input" == "null" ]]; then
+        echo "Error: Could not extract partition data from parted output." >&2
+        exit 1
+    fi
+
+    partition_count=$(echo "$json_input" | jq 'length')
+    if [[ "$partition_count" -gt 1 ]]; then
+        if [[ -z "$BOOT_PARTITION" ]]; then
+            BOOT_PARTITION=$(echo "$json_input" | jq -r '.[] | select((.flags // []) | contains(["boot"])) | .number')
+            echo "Using boot partition $BOOT_PARTITION"
+        fi
+
+        if [[ -z "$ROOT_PARTITION" ]]; then
+            ROOT_PARTITION=$(echo "$json_input" | jq -r '
+                map(select((.flags // []) | contains(["boot"]) | not)) |
+                sort_by(.start | sub("B$"; "") | tonumber) |
+                last |
+                .number
+            ')
+            echo "Using root partition $ROOT_PARTITION"
+        fi
+
+        if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
+            echo "Error: Auto-detection failed. Could not uniquely identify partitions after parsing." >&2
+            sudo parted --script "$LOOPDEV" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+            exit 1
+        fi
+    fi
+fi
+
 # Expand image if additional space requested
 if [ "$ADDITIONAL_MB" -gt 0 ]; then
     ALIGN_BLOCK=4
@@ -109,22 +144,22 @@ echo "Created loopback device: $LOOPDEV"
 # Resize partition if space was added
 if [ "$ADDITIONAL_MB" -gt 0 ]; then
     sudo parted --script "$LOOPDEV" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
-    echo "Resizing partition..."
+    echo ""
 
-    # Check partition table type
     PART_TABLE=$(sudo parted --script "$LOOPDEV" print 2>/dev/null | grep "Partition Table:" | awk '{print $3}')
     if [ "$PART_TABLE" = "gpt" ]; then
         echo "Fixing GPT backup header..."
         sudo sgdisk -e "$LOOPDEV" 2>&1 | grep -v "Warning: Not all of the space" || true
     fi
 
-    # Resize root partition to use all available space
+    echo "Resizing partition to use available space"
     sudo parted --script "$LOOPDEV" resizepart "$ROOT_PARTITION" 100%
     sudo e2fsck -p -f "${LOOPDEV}p${ROOT_PARTITION}"
     sudo resize2fs "${LOOPDEV}p${ROOT_PARTITION}"
 
     echo "Partition resize complete"
     sudo parted --script "$LOOPDEV" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+    echo ""
 fi
 
 # Wait for partition devices
@@ -140,6 +175,7 @@ if [ "$BOOT_PARTITION" != "" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; th
 else
     BOOTDEV=""
 fi
+echo ""
 
 # Create mount point
 MOUNT_DIR="$MOUNT_BASE"
@@ -147,8 +183,6 @@ sudo mkdir -p "$MOUNT_DIR"
 echo "Mount point: $MOUNT_DIR"
 sudo mount "$ROOTDEV" "$MOUNT_DIR"
 echo "Root mounted at $MOUNT_DIR"
-
-# Mount boot partition if it exists
 if [ -n "$BOOTDEV" ]; then
     if [ "$BOOT_PARTITION" = "15" ]; then
         # EFI system partition
@@ -163,6 +197,7 @@ if [ -n "$BOOTDEV" ]; then
     fi
     echo "Boot mounted at $BOOT_MOUNT"
 fi
+echo ""
 
 # Setup QEMU for ARM emulation (if available)
 setup_qemu() {
@@ -198,4 +233,5 @@ echo "State file: $STATE_FILE"
 echo ""
 echo "To enter container: ./chroot.sh $STATE_FILE"
 echo "To repack, run: ./repack.sh $STATE_FILE"
+echo "To unmount, run: ./unmount.sh $STATE_FILE"
 echo "=========================================="
