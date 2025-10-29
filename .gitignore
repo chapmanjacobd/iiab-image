@@ -1,5 +1,6 @@
-.#mnt.lck
+*.aria2
 *.state
 *.img
 *.img.xz
+/.#mnt.lck
 /mnt/

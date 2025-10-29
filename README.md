@@ -2,7 +2,7 @@
 
 Inspired by [arm-runner-action](https://github.com/pguyot/arm-runner-action)
 
-Download latest raspios lite by default:
+Download latest raspios lite by default with 22GB of extra space:
 
 ```sh
 ./unpack.sh
@@ -14,6 +14,12 @@ raspios_lite_arm64_latest.img.xz (1/1)
 Creating loopback device...
 Created loopback device: /dev/loop0
 ...
+```
+
+Or for Debian with 5GB extra space:
+
+```sh
+./unpack.sh https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.raw 5000
 ```
 
 Or use local image:

@@ -11,22 +11,34 @@ ROOT_PARTITION="${3:-2}"
 BOOT_PARTITION="${4:-1}"
 MOUNT_BASE="${5:-./mnt}"
 
-# Function to download file with progress
 download_file() {
     local url="$1"
     local output="$2"
 
-    echo "Downloading from $url..."
-    if command -v curl &> /dev/null; then
+    if command -v aria2c &> /dev/null; then
+        aria2c \
+            --log-level=warn \
+            --console-log-level=warn \
+            --summary-interval=0 \
+            --download-result=hide \
+            --follow-metalink=mem \
+            --max-connection-per-server=4 \
+            --min-split-size=5M \
+            --continue=true \
+            --file-allocation=falloc \
+            --enable-http-pipelining=true \
+            -o "$output" \
+            "$url"
+    elif command -v curl &> /dev/null; then
+        echo "aria2c not found. Falling back to curl..."
         curl -L --progress-bar -o "$output" "$url"
     else
-        echo "Error: curl is required to download files" >&2
-        exit 1
+        echo "Error: Neither aria2c nor curl is installed. Cannot download file." >&2
+        return 1
     fi
 }
 
-# Function to wait for device file
-wait_for_file() {
+wait_for_device_file() {
     local pattern="$1"
     local max_retries=60
     local retries=0
@@ -43,22 +55,19 @@ wait_for_file() {
 }
 
 if [[ "$IMAGE_SOURCE" =~ ^https?:// ]]; then
-
     BASE_FILENAME=$(basename "$IMAGE_SOURCE")
+
     # clean up any URL query parameters (e.g., remove ?param=value)
-    CLEANED_FILENAME=$(echo "$BASE_FILENAME" | sed 's/\?.*$//')
-    # use the cleaned filename for the download, ensuring it's not empty
+    CLEANED_FILENAME=$(echo "$BASE_FILENAME" | sed 's/\?.*$//' | sed 's/\.raw\.*$/.img\./')
     if [[ -z "$CLEANED_FILENAME" || "$CLEANED_FILENAME" == "/" ]]; then
         # Fallback if URL is just a domain or ends in a slash
         DOWNLOAD_FILE="latest.img.xz"
-    elif [[ "$CLEANED_FILENAME" == *.img.xz ]]; then
+    elif [[ "$CLEANED_FILENAME" == *.img.xz || "$CLEANED_FILENAME" == *.img ]]; then
         DOWNLOAD_FILE="$CLEANED_FILENAME"
     else
-        # Append the desired suffix
         DOWNLOAD_FILE="${CLEANED_FILENAME}.img.xz"
     fi
 
-    trap "rm -f '$DOWNLOAD_FILE'" EXIT
     download_file "$IMAGE_SOURCE" "$DOWNLOAD_FILE"
     XZ_FILE="$DOWNLOAD_FILE"
 elif [ -f "$IMAGE_SOURCE" ]; then
@@ -74,12 +83,12 @@ IMG_FILE="${XZ_FILE%.xz}"
 if [ "$XZ_FILE" != "$IMG_FILE" ]; then
     echo "Extracting $XZ_FILE..."
     if [ ! -f "$IMG_FILE" ]; then
-        xz -d -k -v "$XZ_FILE"
+        xz -d -v "$XZ_FILE"
     else
         echo "Image file $IMG_FILE already exists, skipping extraction"
     fi
 else
-    echo "Warning: File doesn't have .xz extension, assuming it's already extracted"
+    echo "File doesn't have .xz extension, assuming it's already extracted"
     IMG_FILE="$XZ_FILE"
 fi
 
@@ -115,11 +124,11 @@ fi
 sync
 sudo partprobe -s "$LOOPDEV"
 
-ROOTDEV=$(wait_for_file "${LOOPDEV}p${ROOT_PARTITION}")
+ROOTDEV=$(wait_for_device_file "${LOOPDEV}p${ROOT_PARTITION}")
 echo "Root device: $ROOTDEV"
 
 if [ "$BOOT_PARTITION" != "" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
-    BOOTDEV=$(wait_for_file "${LOOPDEV}p${BOOT_PARTITION}")
+    BOOTDEV=$(wait_for_device_file "${LOOPDEV}p${BOOT_PARTITION}")
     echo "Boot device: $BOOTDEV"
 else
     BOOTDEV=""
