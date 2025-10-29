@@ -7,8 +7,8 @@ DEFAULT_URL="https://downloads.raspberrypi.org/raspios_lite_arm64_latest"
 # Parse arguments
 IMAGE_SOURCE="${1:-$DEFAULT_URL}"
 ADDITIONAL_MB="${2:-22000}"
-ROOT_PARTITION="${3:-2}"
-BOOT_PARTITION="${4:-1}"
+BOOT_PARTITION="${3:-1}"
+ROOT_PARTITION="${4:-2}"
 MOUNT_BASE="${5:-./mnt}"
 
 download_file() {
@@ -94,6 +94,9 @@ fi
 
 # Expand image if additional space requested
 if [ "$ADDITIONAL_MB" -gt 0 ]; then
+    ALIGN_BLOCK=4
+    ADDITIONAL_MB=$(( ( (ADDITIONAL_MB + ALIGN_BLOCK - 1) / ALIGN_BLOCK ) * ALIGN_BLOCK ))
+
     echo "Adding ${ADDITIONAL_MB}MB to image..."
     dd if=/dev/zero bs=1M count="$ADDITIONAL_MB" >> "$IMG_FILE"
 fi
@@ -105,19 +108,23 @@ echo "Created loopback device: $LOOPDEV"
 
 # Resize partition if space was added
 if [ "$ADDITIONAL_MB" -gt 0 ]; then
+    sudo parted --script "$LOOPDEV" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
     echo "Resizing partition..."
 
-    # Check if GPT and fix if needed
-    if sudo parted --script "$LOOPDEV" print | grep -q "Partition Table: gpt"; then
-        echo "GPT partition table detected, fixing backup GPT..."
-        sudo sgdisk -e "$LOOPDEV"
+    # Check partition table type
+    PART_TABLE=$(sudo parted --script "$LOOPDEV" print 2>/dev/null | grep "Partition Table:" | awk '{print $3}')
+    if [ "$PART_TABLE" = "gpt" ]; then
+        echo "Fixing GPT backup header..."
+        sudo sgdisk -e "$LOOPDEV" 2>&1 | grep -v "Warning: Not all of the space" || true
     fi
 
-    # Resize partition to use all available space
+    # Resize root partition to use all available space
     sudo parted --script "$LOOPDEV" resizepart "$ROOT_PARTITION" 100%
     sudo e2fsck -p -f "${LOOPDEV}p${ROOT_PARTITION}"
     sudo resize2fs "${LOOPDEV}p${ROOT_PARTITION}"
+
     echo "Partition resize complete"
+    sudo parted --script "$LOOPDEV" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
 fi
 
 # Wait for partition devices
@@ -138,16 +145,23 @@ fi
 MOUNT_DIR="$MOUNT_BASE"
 sudo mkdir -p "$MOUNT_DIR"
 echo "Mount point: $MOUNT_DIR"
-
-# Mount root filesystem
-echo "Mounting root filesystem..."
 sudo mount "$ROOTDEV" "$MOUNT_DIR"
+echo "Root mounted at $MOUNT_DIR"
 
 # Mount boot partition if it exists
 if [ -n "$BOOTDEV" ]; then
-    echo "Mounting boot filesystem..."
-    sudo mkdir -p "$MOUNT_DIR/boot"
-    sudo mount "$BOOTDEV" "$MOUNT_DIR/boot"
+    if [ "$BOOT_PARTITION" = "15" ]; then
+        # EFI system partition
+        BOOT_MOUNT="$MOUNT_DIR/boot/efi"
+        sudo mkdir -p "$BOOT_MOUNT"
+        sudo mount "$BOOTDEV" "$BOOT_MOUNT"
+    else
+        # traditional boot partition
+        BOOT_MOUNT="$MOUNT_DIR/boot"
+        sudo mkdir -p "$BOOT_MOUNT"
+        sudo mount "$BOOTDEV" "$BOOT_MOUNT"
+    fi
+    echo "Boot mounted at $BOOT_MOUNT"
 fi
 
 # Setup QEMU for ARM emulation (if available)
@@ -171,6 +185,7 @@ MOUNT_DIR=$MOUNT_DIR
 IMG_FILE=$IMG_FILE
 ROOT_PARTITION=$ROOT_PARTITION
 BOOT_PARTITION=$BOOT_PARTITION
+BOOT_MOUNT=${BOOT_MOUNT:-}
 EOF
 
 echo ""

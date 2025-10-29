@@ -78,11 +78,20 @@ if [[ "$OPTIMIZE" == "yes" || "$OPTIMIZE" == "true" ]]; then
 
     # Zero-fill boot partition
     if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
-        if [ -d "$MOUNT_DIR/boot" ]; then
-            echo "Zero-filling unused blocks on boot filesystem..."
-            (sudo sh -c "cat /dev/zero > '$MOUNT_DIR/boot/zero.fill'" 2>/dev/null || true)
+        BOOT_FILL_PATH=""
+        if [ -n "${BOOT_MOUNT:-}" ] && mountpoint -q "$BOOT_MOUNT" 2>/dev/null; then
+            BOOT_FILL_PATH="$BOOT_MOUNT"
+        elif mountpoint -q "$MOUNT_DIR/boot/efi" 2>/dev/null; then
+            BOOT_FILL_PATH="$MOUNT_DIR/boot/efi"
+        elif mountpoint -q "$MOUNT_DIR/boot" 2>/dev/null; then
+            BOOT_FILL_PATH="$MOUNT_DIR/boot"
+        fi
+
+        if [ -n "$BOOT_FILL_PATH" ]; then
+            echo "Zero-filling unused blocks on boot filesystem... $BOOT_FILL_PATH"
+            (sudo sh -c "cat /dev/zero > '$BOOT_FILL_PATH/zero.fill'" 2>/dev/null || true)
             sync
-            sudo rm -f "$MOUNT_DIR/boot/zero.fill"
+            sudo rm -f "$BOOT_FILL_PATH/zero.fill"
         fi
     fi
 
@@ -106,7 +115,11 @@ echo "Unmounting filesystems..."
 
 # systemd-nspawn doesn't leave mounts behind, so we only need to unmount boot and root
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
-    if mountpoint -q "$MOUNT_DIR/boot" 2>/dev/null; then
+    if [ -n "${BOOT_MOUNT:-}" ] && mountpoint -q "$BOOT_MOUNT" 2>/dev/null; then
+        unmount_with_retries "$BOOT_MOUNT"
+    elif mountpoint -q "$MOUNT_DIR/boot/efi" 2>/dev/null; then
+        unmount_with_retries "$MOUNT_DIR/boot/efi"
+    elif mountpoint -q "$MOUNT_DIR/boot" 2>/dev/null; then
         unmount_with_retries "$MOUNT_DIR/boot"
     fi
 fi

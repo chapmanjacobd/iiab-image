@@ -65,7 +65,11 @@ fi
 
 # Unmount boot partition if it exists and is mounted
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "${ROOT_PARTITION:-2}" ]; then
-    if [ -d "$MOUNT_DIR/boot" ]; then
+    if [ -n "${BOOT_MOUNT:-}" ] && [ -d "$BOOT_MOUNT" ]; then
+        unmount_with_retries "$BOOT_MOUNT"
+    elif [ -d "$MOUNT_DIR/boot/efi" ]; then
+        unmount_with_retries "$MOUNT_DIR/boot/efi"
+    elif [ -d "$MOUNT_DIR/boot" ]; then
         unmount_with_retries "$MOUNT_DIR/boot"
     fi
 fi
@@ -87,4 +91,4 @@ if [ -n "$LOOPDEV" ]; then
     fi
 fi
 
-rm "$STATE_FILE"
+rm -f "$STATE_FILE"
