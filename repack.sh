@@ -86,11 +86,19 @@ if [[ "$OPTIMIZE" == "yes" || "$OPTIMIZE" == "true" ]]; then
         fi
     fi
 
+    # TODO:
+    # use zerofree instead:
+    # sudo e4defrag -c -v /dev/loop0p2
+    # umount "$MOUNT_DIR"
+    # sudo zerofree -v /dev/loop0p2
+
     # Zero-fill root partition
     echo "Zero-filling unused blocks on root filesystem..."
     (sudo sh -c "cat /dev/zero > '$MOUNT_DIR/zero.fill'" 2>/dev/null || true)
     sync
     sudo rm -f "$MOUNT_DIR/zero.fill"
+
+    # TODO: look into raspi-config --expand-rootfs
 fi
 
 # Unmount all filesystems
