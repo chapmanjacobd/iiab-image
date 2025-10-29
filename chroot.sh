@@ -49,12 +49,28 @@ else
 fi
 
 NSPAWN_OPTS=(
-    -q                          # Quiet
-    -D "$MOUNT_DIR"             # Directory
-    --resolv-conf=replace-host  # Use host DNS
-    # --boot                    # Isolate systemd
+    -q                          # quiet
+    -D "$MOUNT_DIR"             # OS directory
     --background=""             # disable nspawn terminal coloring
+    --network-veth              # use private networking to prevent sshd port-in-use conflict
+                                # alternatively pass in an existing network bridge interface
+                                # example: --network-bridge=br0
+    --resolv-conf=replace-host  # but use host DNS
+    --boot                      # use init system
 )
+
+# automate IIAB install
+# TODO:
+# SET PASSWORD
+# boot once for raspios headless first-time boot config, ctrl+]]]
+# run without --boot to change root password, exit
+
+# alternatives?
+# set root password first then boot
+# systemd-firstboot
+
+# RUN INSTALL
+# boot, curl iiab.io/install.txt | bash
 
 if [ "$COMMAND" = "/bin/bash" ] || [ "$COMMAND" = "bash" ]; then
     echo "Starting interactive shell..."
