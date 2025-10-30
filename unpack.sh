@@ -9,7 +9,6 @@ IMAGE_SOURCE="${1:-$DEFAULT_URL}"
 ADDITIONAL_MB="${2:-22000}"
 BOOT_PARTITION="${3:-}"
 ROOT_PARTITION="${4:-}"
-MOUNT_BASE="${5:-./mnt}"
 
 download_file() {
     local url="$1"
@@ -180,7 +179,7 @@ fi
 echo ""
 
 # Create mount point
-MOUNT_DIR="$MOUNT_BASE"
+MOUNT_DIR="${IMG_FILE%.*}"
 sudo mkdir -p "$MOUNT_DIR"
 echo "Mount point: $MOUNT_DIR"
 sudo mount "$ROOTDEV" "$MOUNT_DIR"
