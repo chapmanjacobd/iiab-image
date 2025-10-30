@@ -10,10 +10,7 @@ if [ ! -f "$STATE_FILE" ]; then
     echo "Error: State file '$STATE_FILE' not found" >&2
     exit 1
 fi
-
-# Load state
 source "$STATE_FILE"
-
 # Verify required variables
 : "${LOOPDEV:?Error: LOOPDEV not set in state file}"
 : "${MOUNT_DIR:?Error: MOUNT_DIR not set in state file}"
@@ -24,20 +21,11 @@ echo "Loop device: $LOOPDEV"
 echo "Mount point: $MOUNT_DIR"
 echo "Image file: $IMG_FILE"
 
-# Cleanup chroot environment files (check if they actually exist first)
-echo "Cleaning up chroot environment..."
-
-# Remove QEMU binaries
-sudo rm -f "$MOUNT_DIR/usr/bin/qemu-arm-static" 2>/dev/null || true
-sudo rm -f "$MOUNT_DIR/usr/bin/qemu-aarch64-static" 2>/dev/null || true
-
-# Restore ld.so.preload if backup exists
-if [ -f "$MOUNT_DIR/etc/_ld.so.preload" ]; then
-    echo "Restoring ld.so.preload..."
-    sudo mv "$MOUNT_DIR/etc/_ld.so.preload" "$MOUNT_DIR/etc/ld.so.preload"
+if ! mountpoint -q "$MOUNT_DIR"; then
+    echo "$MOUNT_DIR is not a mountpoint"
+    return 1
 fi
 
-# Function to unmount with retries
 unmount_with_retries() {
     local mountpoint="$1"
     local retries=0
@@ -68,16 +56,21 @@ unmount_with_retries() {
 
 # Optimize image if requested
 if [[ "$OPTIMIZE" == "yes" || "$OPTIMIZE" == "true" ]]; then
-    echo "Optimizing image..."
+
+    # Remove QEMU binaries
+    for qemu_bin in "$MOUNT_DIR/usr/bin/qemu-*-static"; do
+        sudo rm -f "$qemu_bin" 2>/dev/null || true
+    done
 
     # Zero-fill boot partition
     if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
+        # Determine boot mount
         BOOT_FILL_PATH=""
         if [ -n "${BOOT_MOUNT:-}" ] && mountpoint -q "$BOOT_MOUNT" 2>/dev/null; then
             BOOT_FILL_PATH="$BOOT_MOUNT"
-        elif mountpoint -q "$MOUNT_DIR/boot/efi" 2>/dev/null; then
+        elif [ -d "$MOUNT_DIR/boot/efi" ] && mountpoint -q "$MOUNT_DIR/boot/efi" 2>/dev/null; then
             BOOT_FILL_PATH="$MOUNT_DIR/boot/efi"
-        elif mountpoint -q "$MOUNT_DIR/boot" 2>/dev/null; then
+        elif [ -d "$MOUNT_DIR/boot" ] && mountpoint -q "$MOUNT_DIR/boot" 2>/dev/null; then
             BOOT_FILL_PATH="$MOUNT_DIR/boot"
         fi
 
@@ -89,25 +82,15 @@ if [[ "$OPTIMIZE" == "yes" || "$OPTIMIZE" == "true" ]]; then
         fi
     fi
 
-    # TODO:
-    # use zerofree instead:
-    # sudo e4defrag -c -v /dev/loop0p2
-    # umount "$MOUNT_DIR"
-    # sudo zerofree -v /dev/loop0p2
-
     # Zero-fill root partition
     echo "Zero-filling unused blocks on root filesystem..."
     (sudo sh -c "cat /dev/zero > '$MOUNT_DIR/zero.fill'" 2>/dev/null || true)
     sync
     sudo rm -f "$MOUNT_DIR/zero.fill"
-
-    # TODO: look into raspi-config --expand-rootfs
 fi
 
-# Unmount all filesystems
 echo "Unmounting filesystems..."
 
-# systemd-nspawn doesn't leave mounts behind, so we only need to unmount boot and root
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
     if [ -n "${BOOT_MOUNT:-}" ] && mountpoint -q "$BOOT_MOUNT" 2>/dev/null; then
         unmount_with_retries "$BOOT_MOUNT"
@@ -122,71 +105,59 @@ if mountpoint -q "$MOUNT_DIR" 2>/dev/null; then
     unmount_with_retries "$MOUNT_DIR"
 fi
 
-# Optimize partition size if requested
 if [[ "$OPTIMIZE" == "yes" || "$OPTIMIZE" == "true" ]]; then
     echo "Shrinking root filesystem to minimal size..."
     ROOTDEV="${LOOPDEV}p${ROOT_PARTITION}"
 
-    # Shrink filesystem
     sudo e2fsck -p -f "$ROOTDEV"
     sudo resize2fs -M "$ROOTDEV"
 
-    # Get filesystem info
     ROOTFS_BLOCKSIZE=$(sudo tune2fs -l "$ROOTDEV" | grep "^Block size" | awk '{print $NF}')
     ROOTFS_BLOCKCOUNT=$(sudo tune2fs -l "$ROOTDEV" | grep "^Block count" | awk '{print $NF}')
 
     # Calculate new partition size
     ROOTFS_PARTSTART=$(sudo parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $2}' | tr -d 'B')
     ROOTFS_PARTSIZE=$((ROOTFS_BLOCKCOUNT * ROOTFS_BLOCKSIZE))
-    ROOTFS_PARTEND=$((ROOTFS_PARTSTART + ROOTFS_PARTSIZE - 1))
+    ROOTFS_PARTEND=$((ROOTFS_PARTSTART + ROOTFS_PARTSIZE))
     ROOTFS_PARTOLDEND=$(sudo parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $3}' | tr -d 'B')
 
-    # Shrink partition if needed
     if [ "$ROOTFS_PARTOLDEND" -gt "$ROOTFS_PARTEND" ]; then
         echo "Shrinking root partition..."
-        echo y | sudo parted ---pretend-input-tty "$LOOPDEV" unit B resizepart "$ROOT_PARTITION" "$ROOTFS_PARTEND"
+
+        echo sudo parted ---pretend-input-tty "$LOOPDEV" unit B resizepart "$ROOT_PARTITION" "$ROOTFS_PARTEND"
+
+        (echo "Fix" | sudo parted ---pretend-input-tty "$LOOPDEV" unit B resizepart "$ROOT_PARTITION" "$ROOTFS_PARTEND") 2>&1 | \
+            grep -v "Warning: Not all of the space" || true
     else
         echo "Root partition already at minimal size"
     fi
 
-    # Shrink image file
     FREE_SPACE=$(sudo parted -m --script "$LOOPDEV" unit B print free | tail -1)
     if [[ "$FREE_SPACE" =~ "free" ]]; then
         INITIAL_SIZE=$(stat -L --printf="%s" "$IMG_FILE")
         NEW_SIZE=$(echo "$FREE_SPACE" | awk -F ":" '{print $2}' | tr -d 'B')
-
-        # Check partition table type
         PART_TYPE=$(sudo blkid -o value -s PTTYPE "$LOOPDEV")
-        echo "Partition table type: $PART_TYPE"
-
-        # Add space for GPT backup table if needed
         if [[ "$PART_TYPE" == "gpt" ]]; then
             NEW_SIZE=$((NEW_SIZE + 16896))
         fi
 
         echo "Shrinking image from $INITIAL_SIZE to $NEW_SIZE bytes..."
-        sudo losetup --detach "$LOOPDEV"
+        sudo losetup --detach "$LOOPDEV"  # detach before truncation
+        LOOPDEV=""
         truncate -s "$NEW_SIZE" "$IMG_FILE"
 
-        # Fix GPT backup table if needed
         if [[ "$PART_TYPE" == "gpt" ]]; then
             echo "Fixing GPT backup table..."
-            sudo sgdisk -e "$IMG_FILE"
+            sudo sgdisk -e "$IMG_FILE" 2>&1 | grep -v "Warning: Not all of the space" || true
         fi
-
-        # Re-create loopback for final cleanup
-        LOOPDEV=$(sudo losetup --find --show --partscan "$IMG_FILE")
     fi
 fi
 
-# Detach loopback device
-echo "Detaching loopback device..."
-sudo losetup --detach "$LOOPDEV" || true
+if [ -n "$LOOPDEV" ]; then
+    sudo losetup --detach "$LOOPDEV" || true
+fi
 
-# Remove mount directory
 sudo rmdir "$MOUNT_DIR" 2>/dev/null || true
-
-# Remove state file
 rm -f "$STATE_FILE"
 
 echo ""

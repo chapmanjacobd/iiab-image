@@ -1,3 +1,5 @@
 Set TARGET_SIZE instead of ADDITIONAL_MB so that multiple ./unpack.sh invocations are idempotent
 
 Better understand or hide this error: Warning: Not all of the space available to /dev/loop0 appears to be used, you can fix the GPT to use all of the space (an extra 2014 blocks) or continue with the current setting?
+
+look into raspi-config --expand-rootfs

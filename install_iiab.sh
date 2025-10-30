@@ -55,34 +55,18 @@ set timeout 600
 
 set MOUNT_DIR "$MOUNT_DIR"
 
-# Spawn the container with --boot and network options for the interactive session
-spawn sudo systemd-nspawn -q -D \$MOUNT_DIR --network-veth --boot --machine="$CONTAINER_NAME"
+spawn sudo systemd-nspawn -q -D \$MOUNT_DIR --network-bridge=br0 --boot
 
-# Login sequence: Only match login, no password needed due to systemd-firstboot
-# Use -re to match the start of the line (^) for resilience
 expect -re "^login:" { send "root\r" }
+expect -re "^#" { send "curl iiab.io/risky.txt | bash\r" }
 
-# Execute the installer script (using the pre-downloaded script)
-expect "#" { send "\$INSTALLER_PATH\r" }
-
-# Wait for first prompt and select option 1
-expect {
-    timeout { puts "\n❌ Timeout waiting for initial installation menu."; exit 1 }
-    -re ".*choice.*:" { send "1\r" }
-    -re ".*number.*:" { send "1\r" }
-    "1) Full Install" { send "1\r" }
-}
-
-# Press enter after selection
 expect {
     timeout { puts "\n❌ Timeout waiting for confirmation."; exit 1 }
-    -re ".*continue.*" { send "\r" }
-    -re ".*press.*enter.*" { send "\r" }
     -re ".*OK.*" { send "\r" }
     eof
 }
 
-expect "#" { send "shutdown now\r" }
+expect -re "^#" { send "shutdown now\r" }
 expect eof
 EXPECT_EOF
 

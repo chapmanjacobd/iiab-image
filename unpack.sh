@@ -199,19 +199,6 @@ if [ -n "$BOOTDEV" ]; then
 fi
 echo ""
 
-# Setup QEMU for ARM emulation (if available)
-setup_qemu() {
-    if [ -f /usr/bin/qemu-arm-static ]; then
-        echo "Setting up QEMU for ARM emulation..."
-        sudo cp /usr/bin/qemu-arm-static "$MOUNT_DIR/usr/bin/" 2>/dev/null || true
-    fi
-    if [ -f /usr/bin/qemu-aarch64-static ]; then
-        sudo cp /usr/bin/qemu-aarch64-static "$MOUNT_DIR/usr/bin/" 2>/dev/null || true
-    fi
-}
-
-setup_qemu
-
 # Save state information
 STATE_FILE="${IMG_FILE}.state"
 cat > "$STATE_FILE" <<EOF

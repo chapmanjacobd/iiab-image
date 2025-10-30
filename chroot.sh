@@ -32,11 +32,9 @@ if ! command -v systemd-nspawn &> /dev/null; then
     sudo apt-get install -y systemd-container
 fi
 for qemu_bin in /usr/bin/qemu-*-static; do
-    if [ -f "$qemu_bin" ]; then
-        target_bin="$MOUNT_DIR/usr/bin/${qemu_bin##*/}"
-        if [ ! -f "$target_bin" ]; then
-            sudo cp "$qemu_bin" "$target_bin"
-        fi
+    target_bin="$MOUNT_DIR/usr/bin/${qemu_bin##*/}"
+    if [ ! -f "$target_bin" ]; then
+        sudo cp "$qemu_bin" "$target_bin"
     fi
 done
 
