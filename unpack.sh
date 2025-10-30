@@ -92,6 +92,8 @@ else
     IMG_FILE="$XZ_FILE"
 fi
 
+sfdisk -r "$IMG_FILE"
+
 if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
     echo "Partition numbers not explicity set. Attempting to auto-detect using parted on $IMG_FILE..." >&2
     json_output=$(parted --script "$IMG_FILE" unit B print --json 2>/dev/null)

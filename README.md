@@ -18,10 +18,8 @@ Created loopback device: /dev/loop0
 
 Or for Debian with 5GB extra space:
 
-The root and boot partitions must also be specified when they differ from the default "1 2" (ie. partition 1 == boot, partition 2 == root)
-
 ```sh
-./unpack.sh https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.raw 5000 15 1
+./unpack.sh https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.raw 5000
 ```
 
 Or use local image:
