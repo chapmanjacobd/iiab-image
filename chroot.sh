@@ -38,24 +38,14 @@ if ! command -v systemd-nspawn &> /dev/null; then
     sudo apt-get update
     sudo apt-get install -y systemd-container
 fi
-
-if [ -f /usr/bin/qemu-arm-static ] && [ ! -f "$MOUNT_DIR/usr/bin/qemu-arm-static" ]; then
-    echo "Copying qemu-arm-static..."
-    sudo cp /usr/bin/qemu-arm-static "$MOUNT_DIR/usr/bin/"
-fi
-if [ -f /usr/bin/qemu-aarch64-static ] && [ ! -f "$MOUNT_DIR/usr/bin/qemu-aarch64-static" ]; then
-    echo "Copying qemu-aarch64-static..."
-    sudo cp /usr/bin/qemu-aarch64-static "$MOUNT_DIR/usr/bin/"
-fi
-
-if [ ! -f "$MOUNT_DIR/etc/_resolv.conf" ] && [ -f "$MOUNT_DIR/etc/resolv.conf" ]; then
-    sudo cp "$MOUNT_DIR/etc/resolv.conf" "$MOUNT_DIR/etc/_resolv.conf"
-    sudo cp /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
-else  # Update resolv.conf (may be stale)
-    if [ -f "$MOUNT_DIR/etc/resolv.conf" ]; then
-        sudo cp /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
+for qemu_bin in /usr/bin/qemu-*-static; do
+    if [ -f "$qemu_bin" ]; then
+        target_bin="$MOUNT_DIR/usr/bin/${qemu_bin##*/}"
+        if [ ! -f "$target_bin" ]; then
+            sudo cp "$qemu_bin" "$target_bin"
+        fi
     fi
-fi
+done
 
 NSPAWN_OPTS=(
     -q                          # quiet
@@ -64,7 +54,6 @@ NSPAWN_OPTS=(
     --network-veth              # use private networking to prevent sshd port-in-use conflict
                                 # alternatively pass in an existing network bridge interface
                                 # example: --network-bridge=br0
-    --resolv-conf=replace-host  # but use host DNS
     ${BOOT_FLAG}                # use init system
 )
 

@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 set -euo pipefail
 
 STATE_FILE="${1:?Error: State file required. Usage: $0 <state_file>}"
@@ -8,6 +9,23 @@ if [ ! -f "$STATE_FILE" ]; then
 fi
 source "$STATE_FILE"
 : "${MOUNT_DIR:?Error: MOUNT_DIR not set in state file}"
+
+cleanup() {
+    echo "Attempting cleanup of temporary files..." >&2
+    if [ -n "${EXPECT_SCRIPT:-}" ] && [ -f "$EXPECT_SCRIPT" ]; then
+        rm -f "$EXPECT_SCRIPT"
+    fi
+    if [ -n "${IIAB_EXPECT_SCRIPT:-}" ] && [ -f "$IIAB_EXPECT_SCRIPT" ]; then
+        rm -f "$IIAB_EXPECT_SCRIPT"
+    fi
+    sudo systemd-nspawn -k --terminate -D "$MOUNT_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+run_in_container_once() {
+    local cmd="$1"
+    sudo systemd-nspawn -q -D "$MOUNT_DIR" /bin/bash -c "$cmd"
+}
 
 if ! command -v expect &>/dev/null; then
     echo "Installing expect for automation..."
@@ -19,93 +37,62 @@ if ! command -v systemd-nspawn &> /dev/null; then
     sudo apt-get update
     sudo apt-get install -y systemd-container
 fi
-if [ -f /usr/bin/qemu-arm-static ] && [ ! -f "$MOUNT_DIR/usr/bin/qemu-arm-static" ]; then
-    sudo cp /usr/bin/qemu-arm-static "$MOUNT_DIR/usr/bin/"
-fi
-if [ -f /usr/bin/qemu-aarch64-static ] && [ ! -f "$MOUNT_DIR/usr/bin/qemu-aarch64-static" ]; then
-    sudo cp /usr/bin/qemu-aarch64-static "$MOUNT_DIR/usr/bin/"
-fi
-if [ -f "$MOUNT_DIR/etc/resolv.conf" ]; then
-    sudo cp /etc/resolv.conf "$MOUNT_DIR/etc/resolv.conf"
-fi
-
-NSPAWN_OPTS=(
-    -q                          # quiet
-    -D "$MOUNT_DIR"             # OS directory
-    --background=""             # disable nspawn terminal coloring
-    --network-veth              # use private networking to prevent sshd port-in-use conflict
-                                # alternatively pass in an existing network bridge interface
-                                # example: --network-bridge=br0
-    --resolv-conf=replace-host  # but use host DNS
-    --boot                      # use init system
-)
-
-sudo systemd-nspawn "${NSPAWN_OPTS[@]}" &
-NSPAWN_PID=$!
-
-echo "Waiting for container to boot..."
-sleep 10
-
-run_in_container() {
-    sudo machinectl shell root@"${MOUNT_DIR##*/}" /bin/bash -c "$1"
-}
-
-# Wait for container to be fully running
-max_retries=30
-retries=0
-while ! sudo machinectl status "${MOUNT_DIR##*/}" &>/dev/null; do
-    retries=$((retries + 1))
-    if [ $retries -ge $max_retries ]; then
-        echo "Error: Container failed to start" >&2
-        sudo kill $NSPAWN_PID 2>/dev/null || true
-        exit 1
+for qemu_bin in /usr/bin/qemu-*-static; do
+    if [ -f "$qemu_bin" ]; then
+        target_bin="$MOUNT_DIR/usr/bin/${qemu_bin##*/}"
+        if [ ! -f "$target_bin" ]; then
+            sudo cp "$qemu_bin" "$target_bin"
+        fi
     fi
-    sleep 2
 done
 
-echo "Container is running"
-echo ""
-
-# Download and run IIAB installer with automated responses
-echo "Downloading IIAB installer..."
-run_in_container "curl -fsSL iiab.io/install.txt -o /tmp/install.sh && chmod +x /tmp/install.sh"
-
-echo "Running IIAB installer (selecting option 1)..."
+sudo systemd-firstboot --root="$MOUNT_DIR" --delete-root-password --force
 
 EXPECT_SCRIPT=$(mktemp)
-trap "rm -f '$EXPECT_SCRIPT'" EXIT
-
-cat > "$EXPECT_SCRIPT" << 'EXPECT_EOF'
+cat > "$EXPECT_SCRIPT" << EXPECT_EOF
 #!/usr/bin/expect -f
 set timeout 600
 
-spawn sudo machinectl shell root@[lindex $argv 0] /bin/bash -c "/tmp/install.sh"
+set MOUNT_DIR "$MOUNT_DIR"
+
+# Spawn the container with --boot and network options for the interactive session
+spawn sudo systemd-nspawn -q -D \$MOUNT_DIR --network-veth --resolv-conf=replace-host --boot --machine="$CONTAINER_NAME"
+
+# Login sequence: Only match login, no password needed due to systemd-firstboot
+# Use -re to match the start of the line (^) for resilience
+expect -re "^login:" { send "root\r" }
+
+# Execute the installer script (using the pre-downloaded script)
+expect "#" { send "\$INSTALLER_PATH\r" }
 
 # Wait for first prompt and select option 1
 expect {
-    timeout { puts "Timeout waiting for menu"; exit 1 }
+    timeout { puts "\n❌ Timeout waiting for initial installation menu."; exit 1 }
     -re ".*choice.*:" { send "1\r" }
+    -re ".*number.*:" { send "1\r" }
+    "1) Full Install" { send "1\r" }
 }
 
 # Press enter after selection
 expect {
-    timeout { puts "Timeout waiting for confirmation"; exit 1 }
+    timeout { puts "\n❌ Timeout waiting for confirmation."; exit 1 }
     -re ".*continue.*" { send "\r" }
     -re ".*press.*enter.*" { send "\r" }
+    -re ".*OK.*" { send "\r" }
     eof
 }
 
-# Wait for script to complete
+# Cleanly shut down the container from within the shell *before* Expect exits
+expect "#" { send "shutdown now\r" }
+
+# Wait for the script to complete and container to shut down (resulting in EOF)
 expect eof
 EXPECT_EOF
 
 chmod +x "$EXPECT_SCRIPT"
-"$EXPECT_SCRIPT" "${MOUNT_DIR##*/}"
+"$EXPECT_SCRIPT"
 
-echo ""
-echo "Creating ansible configuration..."
-
-run_in_container "mkdir -p /opt/iiab && cat > /opt/iiab/ansible.cfg << 'ANSIBLE_EOF'
+run_in_container_once "mkdir -p /opt/iiab && cat > /opt/iiab/ansible.cfg << 'ANSIBLE_EOF'
 [general]
 ansible_connection = local
 forks = 5
@@ -113,49 +100,34 @@ host_key_checking = False
 ANSIBLE_EOF
 "
 
-echo "Ansible configuration created at /opt/iiab/ansible.cfg"
-echo ""
-
 IIAB_EXPECT_SCRIPT=$(mktemp)
-trap "rm -f '$IIAB_EXPECT_SCRIPT'" EXIT
-
-cat > "$IIAB_EXPECT_SCRIPT" << 'EXPECT_EOF'
+cat > "$IIAB_EXPECT_SCRIPT" << EXPECT_EOF
 #!/usr/bin/expect -f
 set timeout 3600
 
-spawn sudo machinectl shell root@[lindex $argv 0] /bin/bash -c "cd /opt/iiab/iiab && ./iiab"
+set MOUNT_DIR "$MOUNT_DIR"
 
-# Press enter twice when prompted
+spawn sudo systemd-nspawn -q -D \$MOUNT_DIR --network-veth --resolv-conf=replace-host --boot --machine="$CONTAINER_NAME"
+
+expect -re "^login:" { send "root\r" }
+expect "#" { send "iiab\r" }
+
 expect {
-    timeout { puts "Timeout during iiab installation"; exit 1 }
+    timeout { puts "Timeout during iiab installation (first prompt)"; exit 1 }
+    -re ".*continue.*" { send "\r" }
+    -re ".*press.*enter.*" { send "\r" }
+    eof
+}
+expect {
+    timeout { puts "Timeout during iiab installation (second prompt)"; exit 1 }
     -re ".*continue.*" { send "\r" }
     -re ".*press.*enter.*" { send "\r" }
     eof
 }
 
-expect {
-    timeout { puts "Timeout during iiab installation"; exit 1 }
-    -re ".*continue.*" { send "\r" }
-    -re ".*press.*enter.*" { send "\r" }
-    eof
-}
-
-# Wait for installation to complete
+expect "#" { send "shutdown now\r" }
 expect eof
 EXPECT_EOF
 
 chmod +x "$IIAB_EXPECT_SCRIPT"
-"$IIAB_EXPECT_SCRIPT" "${MOUNT_DIR##*/}"
-
-echo ""
-echo "=========================================="
-echo "IIAB Installation Complete!"
-echo "=========================================="
-echo ""
-echo "Shutting down container..."
-sudo machinectl poweroff "${MOUNT_DIR##*/}" || true
-
-echo "Waiting for container to stop..."
-if [ -n "${NSPAWN_PID:-}" ] && sudo kill -0 $NSPAWN_PID 2>/dev/null; then
-    wait $NSPAWN_PID 2>/dev/null || true
-fi
+"$IIAB_EXPECT_SCRIPT"

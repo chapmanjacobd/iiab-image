@@ -136,3 +136,30 @@ sudo umount mnt
 losetup --list
 sudo losetup --detach /dev/loopX
 ```
+
+---
+
+## Why not machinectl?
+
+`machinectl` is really cool--when it works! I'm not sure why, but I often get errors like this:
+
+```sh
+sudo machinectl shell debian13
+Failed to get shell PTY: Connection refused
+```
+
+`machinectl` feels like a buggy afterthought. In contrast, `systemd-nspawn` has been a lot more reliable for me:
+
+```sh
+sudo systemd-nspawn -M debian13 /bin/bash
+sudo systemd-nspawn --quiet --boot --network-veth --machine=debian13
+```
+
+Maybe someday machinectl will work better and some of these scripts can be fully replaced by something more conventional:
+
+```sh
+sudo importctl pull-raw -Nm --verify=no https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.raw debian13
+sudo systemd-firstboot --image=/var/lib/machines/debian13.raw --delete-root-password --force
+sudo machinectl start debian13
+sudo machinectl shell debian13
+```
