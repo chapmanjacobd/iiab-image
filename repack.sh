@@ -31,12 +31,6 @@ echo "Cleaning up chroot environment..."
 sudo rm -f "$MOUNT_DIR/usr/bin/qemu-arm-static" 2>/dev/null || true
 sudo rm -f "$MOUNT_DIR/usr/bin/qemu-aarch64-static" 2>/dev/null || true
 
-# Restore resolv.conf if backup exists
-if [ -f "$MOUNT_DIR/etc/_resolv.conf" ]; then
-    echo "Restoring resolv.conf..."
-    sudo mv "$MOUNT_DIR/etc/_resolv.conf" "$MOUNT_DIR/etc/resolv.conf"
-fi
-
 # Restore ld.so.preload if backup exists
 if [ -f "$MOUNT_DIR/etc/_ld.so.preload" ]; then
     echo "Restoring ld.so.preload..."

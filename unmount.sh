@@ -48,21 +48,6 @@ unmount_with_retries() {
     echo "Unmounted $mountpoint"
 }
 
-# Cleanup nspawn environment files if they exist
-if [ -d "$MOUNT_DIR" ]; then
-    echo "Cleaning up container environment..."
-
-    # Remove QEMU binaries
-    sudo rm -f "$MOUNT_DIR/usr/bin/qemu-arm-static" 2>/dev/null || true
-    sudo rm -f "$MOUNT_DIR/usr/bin/qemu-aarch64-static" 2>/dev/null || true
-
-    # Restore resolv.conf if backup exists
-    if [ -f "$MOUNT_DIR/etc/_resolv.conf" ]; then
-        echo "Restoring resolv.conf..."
-        sudo mv "$MOUNT_DIR/etc/_resolv.conf" "$MOUNT_DIR/etc/resolv.conf"
-    fi
-fi
-
 # Unmount boot partition if it exists and is mounted
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "${ROOT_PARTITION:-2}" ]; then
     if [ -n "${BOOT_MOUNT:-}" ] && [ -d "$BOOT_MOUNT" ]; then

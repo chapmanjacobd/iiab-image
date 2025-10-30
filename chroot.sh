@@ -4,18 +4,14 @@ set -euo pipefail
 STATE_FILE="${1:?Error: State file required. Usage: $0 <state_file> [--boot] [command]}"
 shift || true
 
-# Initialize variables
 BOOT_FLAG=""
 ARGS_FOR_COMMAND=()
-
-# Process remaining arguments for flags and command
 for arg in "$@"; do
     case "$arg" in
         --boot)
             BOOT_FLAG="--boot"
             ;;
         *)
-            # Collect non-flag arguments to form the COMMAND
             ARGS_FOR_COMMAND+=("$arg")
             ;;
     esac
@@ -27,10 +23,7 @@ if [ ! -f "$STATE_FILE" ]; then
     exit 1
 fi
 
-# Load state
 source "$STATE_FILE"
-
-# Verify required variables
 : "${MOUNT_DIR:?Error: MOUNT_DIR not set in state file}"
 
 if ! command -v systemd-nspawn &> /dev/null; then
@@ -51,9 +44,7 @@ NSPAWN_OPTS=(
     -q                          # quiet
     -D "$MOUNT_DIR"             # OS directory
     --background=""             # disable nspawn terminal coloring
-    --network-veth              # use private networking to prevent sshd port-in-use conflict
-                                # alternatively pass in an existing network bridge interface
-                                # example: --network-bridge=br0
+    --network-bridge=br0
     ${BOOT_FLAG}                # use init system
 )
 
