@@ -50,7 +50,8 @@ set timeout 600
 
 set MOUNT_DIR "$MOUNT_DIR"
 
-spawn sudo systemd-nspawn -q -D \$MOUNT_DIR --background="" --network-zone=br0 --boot
+# --network-zone=br0 does not share the WiFi interface
+spawn sudo systemd-nspawn -q -D \$MOUNT_DIR --background="" --boot
 
 expect "login: " { send "root\r" }
 
