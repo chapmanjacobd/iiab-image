@@ -48,6 +48,7 @@ shopt -u nullglob
 NSPAWN_OPTS=(
     -q                          # quiet
     -D "$MOUNT_DIR"             # OS directory
+    -M box                      # Set hostname
     --background=""             # disable nspawn terminal coloring
     # --network-bridge=br0
     ${BOOT_FLAG}                # use init system
