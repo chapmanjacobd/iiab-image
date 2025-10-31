@@ -10,23 +10,6 @@ fi
 source "$STATE_FILE"
 : "${MOUNT_DIR:?Error: MOUNT_DIR not set in state file}"
 
-cleanup() {
-    echo "Attempting cleanup of temporary files..." >&2
-    if [ -n "${EXPECT_SCRIPT:-}" ] && [ -f "$EXPECT_SCRIPT" ]; then
-        rm -f "$EXPECT_SCRIPT"
-    fi
-    if [ -n "${IIAB_EXPECT_SCRIPT:-}" ] && [ -f "$IIAB_EXPECT_SCRIPT" ]; then
-        rm -f "$IIAB_EXPECT_SCRIPT"
-    fi
-    sudo systemd-nspawn -k --terminate -D "$MOUNT_DIR" 2>/dev/null || true
-}
-trap cleanup EXIT
-
-run_in_container_once() {
-    local cmd="$1"
-    sudo systemd-nspawn -q -D "$MOUNT_DIR" /bin/bash -c "$cmd"
-}
-
 if ! command -v expect &>/dev/null; then
     echo "Installing expect for automation..."
     sudo apt-get update
@@ -48,6 +31,18 @@ done
 
 sudo systemd-firstboot --root="$MOUNT_DIR" --delete-root-password --force
 
+cleanup() {
+    echo "Attempting cleanup of temporary files..." >&2
+    if [ -n "${EXPECT_SCRIPT:-}" ] && [ -f "$EXPECT_SCRIPT" ]; then
+        rm -f "$EXPECT_SCRIPT"
+    fi
+    if [ -n "${IIAB_EXPECT_SCRIPT:-}" ] && [ -f "$IIAB_EXPECT_SCRIPT" ]; then
+        rm -f "$IIAB_EXPECT_SCRIPT"
+    fi
+    sudo systemd-nspawn -k --terminate -D "$MOUNT_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 EXPECT_SCRIPT=$(mktemp)
 cat > "$EXPECT_SCRIPT" << EXPECT_EOF
 #!/usr/bin/expect -f
@@ -55,9 +50,9 @@ set timeout 600
 
 set MOUNT_DIR "$MOUNT_DIR"
 
-spawn sudo systemd-nspawn -q -D \$MOUNT_DIR --network-bridge=br0 --boot
+spawn sudo systemd-nspawn -q -D \$MOUNT_DIR --background="" --network-zone=br0 --boot
 
-expect -re "^login:" { send "root\r" }
+expect "login: " { send "root\r" }
 expect -re "^#" { send "curl iiab.io/risky.txt | bash\r" }
 
 expect {

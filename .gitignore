@@ -3,5 +3,5 @@
 *.state
 *.img
 *.img.xz
-/.#mnt.lck
+/.#*.lck
 /mnt/
