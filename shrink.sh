@@ -3,8 +3,10 @@ set -euo pipefail
 
 # Parse arguments
 STATE_FILE="${1:?Error: State file required. Usage: $0 <state_file>}"
-
-# Check if state file exists
+if [[ "$STATE_FILE" != *.state ]]; then
+  echo "Error: STATE_FILE must end in .state" >&2
+  exit 1
+fi
 if [ ! -f "$STATE_FILE" ]; then
     echo "Error: State file '$STATE_FILE' not found" >&2
     exit 1
