@@ -56,11 +56,6 @@ unmount_with_retries() {
     echo "Unmounted $mountpoint"
 }
 
-# Remove QEMU binaries
-for qemu_bin in "$MOUNT_DIR/usr/bin/qemu-*-static"; do
-    rm -f "$qemu_bin" 2>/dev/null || true
-done
-
 # Zero-fill boot partition
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
     # Determine boot mount

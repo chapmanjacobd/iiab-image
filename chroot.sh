@@ -36,15 +36,6 @@ if ! command -v systemd-nspawn &> /dev/null; then
     apt-get install -y systemd-container
 fi
 
-shopt -s nullglob
-for qemu_bin in /usr/bin/qemu-*-static; do
-    target_bin="$MOUNT_DIR/usr/bin/${qemu_bin##*/}"
-    if [ ! -f "$target_bin" ]; then
-        cp "$qemu_bin" "$target_bin"
-    fi
-done
-shopt -u nullglob
-
 NSPAWN_OPTS=(
     -q                          # quiet
     -D "$MOUNT_DIR"             # OS directory

@@ -171,6 +171,10 @@ sudo losetup --detach /dev/loopX
 
 ---
 
+For cross-arch install `qemu-user-static` on the host machine
+
+---
+
 ## Why not machinectl?
 
 `machinectl` is really cool--when it works! I'm not sure why, but I often get errors like this:
