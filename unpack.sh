@@ -4,9 +4,8 @@ set -euo pipefail
 # Default URL for Raspberry Pi OS Lite ARM64
 DEFAULT_URL="https://downloads.raspberrypi.org/raspios_lite_arm64_latest"
 
-# Parse arguments
 IMAGE_SOURCE="${1:-$DEFAULT_URL}"
-ADDITIONAL_MB="${2:-22000}"
+TARGET_MB="${2:-22000}"
 BOOT_PARTITION="${3:-}"
 ROOT_PARTITION="${4:-}"
 
@@ -33,7 +32,7 @@ download_file() {
         curl -L --progress-bar -o "$output" "$url"
     else
         echo "Error: Neither aria2c nor curl is installed. Cannot download file." >&2
-        return 1
+        exit 1
     fi
 }
 
@@ -52,45 +51,63 @@ wait_for_device_file() {
     done
     compgen -G "$pattern"
 }
-
 if [[ "$IMAGE_SOURCE" =~ ^https?:// ]]; then
     BASE_FILENAME=$(basename "$IMAGE_SOURCE")
 
-    # clean up any URL query parameters (e.g., remove ?param=value)
+    # Clean up any URL query parameters (e.g., remove ?param=value)
     CLEANED_FILENAME=$(echo "$BASE_FILENAME" | sed 's/\?.*$//' | sed 's/\.raw/.img/')
-    if [[ -z "$CLEANED_FILENAME" || "$CLEANED_FILENAME" == "/" ]]; then
-        # Fallback if URL is just a domain or ends in a slash
-        DOWNLOAD_FILE="latest.img.xz"
-    elif [[ "$CLEANED_FILENAME" == *.img.xz || "$CLEANED_FILENAME" == *.img ]]; then
-        DOWNLOAD_FILE="$CLEANED_FILENAME"
-    else
-        DOWNLOAD_FILE="${CLEANED_FILENAME}.img.xz"
-    fi
+
+    # Normalize extensions for naming consistency
+    case "$CLEANED_FILENAME" in
+        *.img.xz|*.img|*.raw.gz|*.raw.tar.gz)
+            DOWNLOAD_FILE="$CLEANED_FILENAME"
+            ;;
+        *.raw)
+            DOWNLOAD_FILE="${CLEANED_FILENAME%.raw}.img"
+            ;;
+        *)
+            DOWNLOAD_FILE="${CLEANED_FILENAME}.img.xz"
+            ;;
+    esac
 
     download_file "$IMAGE_SOURCE" "$DOWNLOAD_FILE"
-    XZ_FILE="$DOWNLOAD_FILE"
+    ARCHIVE_FILE="$DOWNLOAD_FILE"
 elif [ -f "$IMAGE_SOURCE" ]; then
-    echo "Using local file: $IMAGE_SOURCE"
-    XZ_FILE="$IMAGE_SOURCE"
+    ARCHIVE_FILE="$IMAGE_SOURCE"
 else
     echo "Error: '$IMAGE_SOURCE' is not a valid URL or file" >&2
     exit 1
 fi
 
-# Extract image
-IMG_FILE="${XZ_FILE%.xz}"
-if [ "$XZ_FILE" != "$IMG_FILE" ]; then
-    echo "Extracting $XZ_FILE..."
-    if [ ! -f "$IMG_FILE" ]; then
-        xz -d -v "$XZ_FILE"
-    else
-        echo "Image file $IMG_FILE already exists, skipping extraction"
-    fi
-else
-    echo "File doesn't have .xz extension, assuming it's already extracted"
-    IMG_FILE="$XZ_FILE"
+case "$ARCHIVE_FILE" in
+    *.img.xz)
+        IMG_FILE="${ARCHIVE_FILE%.xz}"
+        xz -d -v "$ARCHIVE_FILE"
+        ;;
+    *.raw.gz)
+        IMG_FILE="${ARCHIVE_FILE%.gz}.img"
+        gunzip -c "$ARCHIVE_FILE" > "$IMG_FILE"
+        ;;
+    *.raw.tar.gz)
+        IMG_FILE="${ARCHIVE_FILE%.tar.gz}.img"
+        tar -xzf "$ARCHIVE_FILE" --wildcards '*.raw'
+        mv *.raw "$IMG_FILE" 2>/dev/null || true
+        ;;
+    *.img|*.raw)
+        IMG_FILE="$ARCHIVE_FILE"
+        ;;
+    *)
+        echo "Unknown archive type: $ARCHIVE_FILE" >&2
+        exit 1
+        ;;
+esac
+
+if [ -f "${IMG_FILE}.state" ]; then
+    echo "${IMG_FILE}.state already exists. Unmount first: ./unmount ${IMG_FILE}.state"
+    exit 32
 fi
 
+# recalc partition numbers
 sfdisk -r "$IMG_FILE"
 
 if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
@@ -128,38 +145,41 @@ if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
     fi
 fi
 
-# Expand image if additional space requested
-if [ "$ADDITIONAL_MB" -gt 0 ]; then
-    ALIGN_BLOCK=4
-    ADDITIONAL_MB=$(( ( (ADDITIONAL_MB + ALIGN_BLOCK - 1) / ALIGN_BLOCK ) * ALIGN_BLOCK ))
+CURRENT_BYTES=$(stat -c %s "$IMG_FILE")
+CURRENT_MB=$(( CURRENT_BYTES / 1024 / 1024 ))
+ADDITIONAL_MB=$(( TARGET_MB - CURRENT_MB ))
 
+ALIGN_BLOCK=4
+ADDITIONAL_MB=$(( ( (ADDITIONAL_MB + ALIGN_BLOCK - 1) / ALIGN_BLOCK ) * ALIGN_BLOCK ))
+
+if [ "$ADDITIONAL_MB" -gt 0 ]; then
+    echo "Current image size: ${CURRENT_MB}MB"
+    echo "Target image size: ${TARGET_MB}MB"
     echo "Adding ${ADDITIONAL_MB}MB to image..."
-    dd if=/dev/zero bs=1M count="$ADDITIONAL_MB" >> "$IMG_FILE"
+
+    dd if=/dev/zero bs=4M count=$(( ADDITIONAL_MB / 4 )) >> "$IMG_FILE"
 fi
 
-# Create loopback device
-echo "Creating loopback device..."
 LOOPDEV=$(sudo losetup --find --show --partscan "$IMG_FILE")
 echo "Created loopback device: $LOOPDEV"
 
-# Resize partition if space was added
+# Resize partition and filesystem
 if [ "$ADDITIONAL_MB" -gt 0 ]; then
-    sudo parted --script "$LOOPDEV" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
-    echo ""
-
-    PART_TABLE=$(sudo parted --script "$LOOPDEV" print 2>/dev/null | grep "Partition Table:" | awk '{print $3}')
-    if [ "$PART_TABLE" = "gpt" ]; then
+    PART_TYPE=$(sudo blkid -o value -s PTTYPE "$LOOPDEV")
+    if [ "$PART_TYPE" = "gpt" ]; then
         echo "Fixing GPT backup header..."
-        sudo sgdisk -e "$LOOPDEV" 2>&1 | grep -v "Warning: Not all of the space" || true
+        sudo sgdisk -e "$LOOPDEV"
     fi
+    sudo parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+    echo ""
 
     echo "Resizing partition to use available space"
     sudo parted --script "$LOOPDEV" resizepart "$ROOT_PARTITION" 100%
     sudo e2fsck -p -f "${LOOPDEV}p${ROOT_PARTITION}"
     sudo resize2fs "${LOOPDEV}p${ROOT_PARTITION}"
 
-    echo "Partition resize complete"
-    sudo parted --script "$LOOPDEV" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+    echo "Partition resize complete:"
+    sudo parted --script "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
     echo ""
 fi
 
@@ -185,17 +205,9 @@ echo "Mount point: $MOUNT_DIR"
 sudo mount "$ROOTDEV" "$MOUNT_DIR"
 echo "Root mounted at $MOUNT_DIR"
 if [ -n "$BOOTDEV" ]; then
-    if [ "$BOOT_PARTITION" = "15" ]; then
-        # EFI system partition
-        BOOT_MOUNT="$MOUNT_DIR/boot/efi"
-        sudo mkdir -p "$BOOT_MOUNT"
-        sudo mount "$BOOTDEV" "$BOOT_MOUNT"
-    else
-        # traditional boot partition
-        BOOT_MOUNT="$MOUNT_DIR/boot"
-        sudo mkdir -p "$BOOT_MOUNT"
-        sudo mount "$BOOTDEV" "$BOOT_MOUNT"
-    fi
+    BOOT_MOUNT="$MOUNT_DIR/boot"
+    sudo mkdir -p "$BOOT_MOUNT"
+    sudo mount "$BOOTDEV" "$BOOT_MOUNT"
     echo "Boot mounted at $BOOT_MOUNT"
 fi
 echo ""
@@ -211,7 +223,6 @@ BOOT_PARTITION=$BOOT_PARTITION
 BOOT_MOUNT=${BOOT_MOUNT:-}
 EOF
 
-echo ""
 echo "=========================================="
 echo "Image unpacked successfully!"
 echo "=========================================="

@@ -42,7 +42,7 @@ NSPAWN_OPTS=(
     -q                          # quiet
     -D "$MOUNT_DIR"             # OS directory
     --background=""             # disable nspawn terminal coloring
-    --network-bridge=br0
+    # --network-bridge=br0
     ${BOOT_FLAG}                # use init system
 )
 

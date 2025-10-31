@@ -2,8 +2,7 @@
 set -euo pipefail
 
 # Parse arguments
-STATE_FILE="${1:?Error: State file required. Usage: $0 <state_file> [optimize]}"
-OPTIMIZE="${2:-yes}"
+STATE_FILE="${1:?Error: State file required. Usage: $0 <state_file>}"
 
 # Check if state file exists
 if [ ! -f "$STATE_FILE" ]; then
@@ -36,7 +35,6 @@ unmount_with_retries() {
         return 0
     fi
 
-    echo "Unmounting $mountpoint..."
     while ! sudo umount $force "$mountpoint" 2>/dev/null; do
         retries=$((retries + 1))
         if [ $retries -ge $max_retries ]; then
@@ -54,43 +52,38 @@ unmount_with_retries() {
     echo "Unmounted $mountpoint"
 }
 
-# Optimize image if requested
-if [[ "$OPTIMIZE" == "yes" || "$OPTIMIZE" == "true" ]]; then
+# Remove QEMU binaries
+for qemu_bin in "$MOUNT_DIR/usr/bin/qemu-*-static"; do
+    sudo rm -f "$qemu_bin" 2>/dev/null || true
+done
 
-    # Remove QEMU binaries
-    for qemu_bin in "$MOUNT_DIR/usr/bin/qemu-*-static"; do
-        sudo rm -f "$qemu_bin" 2>/dev/null || true
-    done
-
-    # Zero-fill boot partition
-    if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
-        # Determine boot mount
-        BOOT_FILL_PATH=""
-        if [ -n "${BOOT_MOUNT:-}" ] && mountpoint -q "$BOOT_MOUNT" 2>/dev/null; then
-            BOOT_FILL_PATH="$BOOT_MOUNT"
-        elif [ -d "$MOUNT_DIR/boot/efi" ] && mountpoint -q "$MOUNT_DIR/boot/efi" 2>/dev/null; then
-            BOOT_FILL_PATH="$MOUNT_DIR/boot/efi"
-        elif [ -d "$MOUNT_DIR/boot" ] && mountpoint -q "$MOUNT_DIR/boot" 2>/dev/null; then
-            BOOT_FILL_PATH="$MOUNT_DIR/boot"
-        fi
-
-        if [ -n "$BOOT_FILL_PATH" ]; then
-            echo "Zero-filling unused blocks on boot filesystem... $BOOT_FILL_PATH"
-            (sudo sh -c "cat /dev/zero > '$BOOT_FILL_PATH/zero.fill'" 2>/dev/null || true)
-            sync
-            sudo rm -f "$BOOT_FILL_PATH/zero.fill"
-        fi
+# Zero-fill boot partition
+if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
+    # Determine boot mount
+    BOOT_FILL_PATH=""
+    if [ -n "${BOOT_MOUNT:-}" ] && [ -d "$BOOT_MOUNT" ] && mountpoint -q "$BOOT_MOUNT" 2>/dev/null; then
+        BOOT_FILL_PATH="$BOOT_MOUNT"
+    elif [ -d "$MOUNT_DIR/boot/efi" ] && mountpoint -q "$MOUNT_DIR/boot/efi" 2>/dev/null; then
+        BOOT_FILL_PATH="$MOUNT_DIR/boot/efi"
+    elif [ -d "$MOUNT_DIR/boot" ] && mountpoint -q "$MOUNT_DIR/boot" 2>/dev/null; then
+        BOOT_FILL_PATH="$MOUNT_DIR/boot"
     fi
 
-    # Zero-fill root partition
-    echo "Zero-filling unused blocks on root filesystem..."
-    (sudo sh -c "cat /dev/zero > '$MOUNT_DIR/zero.fill'" 2>/dev/null || true)
-    sync
-    sudo rm -f "$MOUNT_DIR/zero.fill"
+    if [ -n "$BOOT_FILL_PATH" ]; then
+        echo "Zero-filling unused blocks on boot filesystem... $BOOT_FILL_PATH"
+        (sudo sh -c "cat /dev/zero > '$BOOT_FILL_PATH/zero.fill'" 2>/dev/null || true)
+        sync
+        sudo rm -f "$BOOT_FILL_PATH/zero.fill"
+    fi
 fi
 
-echo "Unmounting filesystems..."
+# Zero-fill root partition
+echo "Zero-filling unused blocks on root filesystem... $MOUNT_DIR"
+(sudo sh -c "cat /dev/zero > '$MOUNT_DIR/zero.fill'" 2>/dev/null || true)
+sync
+sudo rm -f "$MOUNT_DIR/zero.fill"
 
+echo "Unmounting filesystems..."
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
     if [ -n "${BOOT_MOUNT:-}" ] && mountpoint -q "$BOOT_MOUNT" 2>/dev/null; then
         unmount_with_retries "$BOOT_MOUNT"
@@ -100,65 +93,81 @@ if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; t
         unmount_with_retries "$MOUNT_DIR/boot"
     fi
 fi
-
 if mountpoint -q "$MOUNT_DIR" 2>/dev/null; then
     unmount_with_retries "$MOUNT_DIR"
 fi
 
-if [[ "$OPTIMIZE" == "yes" || "$OPTIMIZE" == "true" ]]; then
-    echo "Shrinking root filesystem to minimal size..."
-    ROOTDEV="${LOOPDEV}p${ROOT_PARTITION}"
+sudo parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+echo ""
 
-    sudo e2fsck -p -f "$ROOTDEV"
-    sudo resize2fs -M "$ROOTDEV"
+echo "Shrinking root filesystem to minimal size..."
+ROOTDEV="${LOOPDEV}p${ROOT_PARTITION}"
 
-    ROOTFS_BLOCKSIZE=$(sudo tune2fs -l "$ROOTDEV" | grep "^Block size" | awk '{print $NF}')
-    ROOTFS_BLOCKCOUNT=$(sudo tune2fs -l "$ROOTDEV" | grep "^Block count" | awk '{print $NF}')
+sudo e2fsck -p -f "$ROOTDEV"
+sudo resize2fs -M "$ROOTDEV"
 
-    # Calculate new partition size
-    ROOTFS_PARTSTART=$(sudo parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $2}' | tr -d 'B')
-    ROOTFS_PARTSIZE=$((ROOTFS_BLOCKCOUNT * ROOTFS_BLOCKSIZE))
-    ROOTFS_PARTEND=$((ROOTFS_PARTSTART + ROOTFS_PARTSIZE))
-    ROOTFS_PARTOLDEND=$(sudo parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $3}' | tr -d 'B')
+ROOTFS_BLOCKSIZE=$(sudo tune2fs -l "$ROOTDEV" | grep "^Block size" | awk '{print $NF}')
+ROOTFS_BLOCKCOUNT=$(sudo tune2fs -l "$ROOTDEV" | grep "^Block count" | awk '{print $NF}')
 
-    if [ "$ROOTFS_PARTOLDEND" -gt "$ROOTFS_PARTEND" ]; then
-        echo "Shrinking root partition..."
+PART_INFO=$(sudo parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:")
+ROOTFS_PARTSTART=$(echo "$PART_INFO" | awk -F ":" '{print $2}' | tr -d 'B')
+ROOTFS_PARTOLDEND=$(echo "$PART_INFO" | awk -F ":" '{print $3}' | tr -d 'B')
+PART_NAME=$(sudo parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $6}')
+PART_FLAGS=$(sudo parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $7}' | tr -d ';')
 
-        echo sudo parted ---pretend-input-tty "$LOOPDEV" unit B resizepart "$ROOT_PARTITION" "$ROOTFS_PARTEND"
+ROOTFS_PARTSIZE=$((ROOTFS_BLOCKCOUNT * ROOTFS_BLOCKSIZE))
+ROOTFS_PARTNEWEND=$((ROOTFS_PARTSTART + ROOTFS_PARTSIZE + 104857600))  # 100MB buffer space
 
-        (echo "Fix" | sudo parted ---pretend-input-tty "$LOOPDEV" unit B resizepart "$ROOT_PARTITION" "$ROOTFS_PARTEND") 2>&1 | \
-            grep -v "Warning: Not all of the space" || true
+if [ "$ROOTFS_PARTOLDEND" -gt "$ROOTFS_PARTNEWEND" ]; then
+    echo "Shrinking root partition from $ROOTFS_PARTOLDEND to $ROOTFS_PARTNEWEND bytes..."
+
+    sudo parted --script "$LOOPDEV" rm "$ROOT_PARTITION"
+    sudo parted --script "$LOOPDEV" unit b mkpart primary ext4 "$ROOTFS_PARTSTART" "$ROOTFS_PARTNEWEND"
+    if [ -n "$PART_NAME" ]; then
+        sudo parted --script "$LOOPDEV" name "$ROOT_PARTITION" "$PART_NAME"
+    fi
+    if [ -n "$PART_FLAGS" ]; then
+        for flag in $(echo "$PART_FLAGS" | tr ',' ' '); do
+            sudo parted --script "$LOOPDEV" set "$ROOT_PARTITION" "$flag" on 2>/dev/null || true
+        done
+    fi
+
+    sudo parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+    echo ""
+    sudo sync
+    sudo partprobe "$LOOPDEV"
+
+    sudo resize2fs "$ROOTDEV" > /dev/null 2>&1
+    sudo tune2fs -m 1 "$ROOTDEV" > /dev/null 2>&1
+else
+    echo "Root partition already at minimal size"
+fi
+
+PART_TYPE=$(sudo blkid -o value -s PTTYPE "$LOOPDEV")
+FREE_SPACE=$(sudo parted -m --script "$LOOPDEV" unit B print free | tail -1)
+
+if [[ "$FREE_SPACE" =~ "free" ]]; then
+    NEW_SIZE=$(echo "$FREE_SPACE" | awk -F ":" '{print $2}' | tr -d 'B')
+    if [[ "$PART_TYPE" == "gpt" ]]; then
+        NEW_SIZE=$((NEW_SIZE + 1048576))
     else
-        echo "Root partition already at minimal size"
+        NEW_SIZE=$((NEW_SIZE + 2048))
     fi
 
-    FREE_SPACE=$(sudo parted -m --script "$LOOPDEV" unit B print free | tail -1)
-    if [[ "$FREE_SPACE" =~ "free" ]]; then
-        INITIAL_SIZE=$(stat -L --printf="%s" "$IMG_FILE")
-        NEW_SIZE=$(echo "$FREE_SPACE" | awk -F ":" '{print $2}' | tr -d 'B')
-        PART_TYPE=$(sudo blkid -o value -s PTTYPE "$LOOPDEV")
-        if [[ "$PART_TYPE" == "gpt" ]]; then
-            NEW_SIZE=$((NEW_SIZE + 16896))
-        fi
+    echo "Truncating image to $NEW_SIZE bytes..."
+    sudo losetup --detach "$LOOPDEV"  # detach before truncation
+    LOOPDEV=""
+    truncate -s "$NEW_SIZE" "$IMG_FILE"
 
-        echo "Shrinking image from $INITIAL_SIZE to $NEW_SIZE bytes..."
-        sudo losetup --detach "$LOOPDEV"  # detach before truncation
-        LOOPDEV=""
-        truncate -s "$NEW_SIZE" "$IMG_FILE"
-
-        if [[ "$PART_TYPE" == "gpt" ]]; then
-            echo "Fixing GPT backup table..."
-            sudo sgdisk -e "$IMG_FILE" 2>&1 | grep -v "Warning: Not all of the space" || true
-        fi
+    if [[ "$PART_TYPE" == "gpt" ]]; then
+        sudo sgdisk -e "$IMG_FILE" > /dev/null 2>&1
     fi
+
+    sudo parted --script --fix "$IMG_FILE" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
 fi
 
-if [ -n "$LOOPDEV" ]; then
-    sudo losetup --detach "$LOOPDEV" || true
-fi
-
-sudo rmdir "$MOUNT_DIR" 2>/dev/null || true
 rm -f "$STATE_FILE"
+sudo rmdir "$MOUNT_DIR"
 
 echo ""
 echo "=========================================="
