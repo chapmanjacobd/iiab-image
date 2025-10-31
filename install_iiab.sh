@@ -53,7 +53,8 @@ set MOUNT_DIR "$MOUNT_DIR"
 spawn sudo systemd-nspawn -q -D \$MOUNT_DIR --background="" --network-zone=br0 --boot
 
 expect "login: " { send "root\r" }
-expect -re "^#" { send "curl iiab.io/risky.txt | bash\r" }
+
+expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash\r" }
 
 expect {
     timeout { puts "\n❌ Timeout waiting for confirmation."; exit 1 }
