@@ -113,7 +113,7 @@ if command -v sfdisk &> /dev/null; then
 fi
 
 if [ "$EUID" -ne 0 ]; then
-    exec sudo "$0" "$@"
+    exec sudo "$0" "$IMG_FILE" "${@:2}"
 fi
 
 if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then

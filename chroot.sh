@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "$EUID" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
 STATE_FILE="${1:?Error: State file required. Usage: $0 <state_file> [--boot] [command]}"
 shift || true
 
@@ -25,10 +29,6 @@ fi
 
 source "$STATE_FILE"
 : "${MOUNT_DIR:?Error: MOUNT_DIR not set in state file}"
-
-if [ "$EUID" -ne 0 ]; then
-    exec sudo "$0" "$@"
-fi
 
 if ! command -v systemd-nspawn &> /dev/null; then
     echo "Installing systemd-container..."
