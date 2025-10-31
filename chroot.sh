@@ -34,7 +34,7 @@ COMMAND=("/bin/bash")
 command_found=false
 for arg in "$@"; do
     if ! $command_found && [[ "$arg" =~ ^--? ]]; then
-        NSPAWN_OPTIONS+=("$arg")
+        NSPAWN_OPTS+=("$arg")
     else
         if ! $command_found; then
             COMMAND=("$arg")
