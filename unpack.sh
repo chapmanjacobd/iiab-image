@@ -9,6 +9,12 @@ TARGET_MB="${2:-22000}"
 BOOT_PARTITION="${3:-}"
 ROOT_PARTITION="${4:-}"
 
+if ! command -v parted &>/dev/null; then
+    echo "Installing parted..."
+    sudo apt-get update
+    sudo apt-get install -y parted
+fi
+
 download_file() {
     local url="$1"
     local output="$2"
@@ -107,12 +113,20 @@ if [ -f "${IMG_FILE}.state" ]; then
     exit 32
 fi
 
-# recalc partition numbers
-sfdisk -r "$IMG_FILE"
+if command -v sfdisk &> /dev/null; then
+    echo "Re-counting partition numbers"
+    sfdisk -r "$IMG_FILE"
+fi
 
 if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
+    if ! command -v jq &>/dev/null; then
+        echo "Installing jq for JSON parsing..."
+        sudo apt-get update
+        sudo apt-get install -y jq
+    fi
+
     echo "Partition numbers not explicity set. Attempting to auto-detect using parted on $IMG_FILE..." >&2
-    json_output=$(parted --script "$IMG_FILE" unit B print --json 2>/dev/null)
+    json_output=$(sudo parted --script "$IMG_FILE" unit B print --json 2>/dev/null)
 
     json_input=$(echo "$json_output" | jq '.disk.partitions' 2>/dev/null)
     if [[ -z "$json_input" || "$json_input" == "null" ]]; then
@@ -167,6 +181,12 @@ echo "Created loopback device: $LOOPDEV"
 if [ "$ADDITIONAL_MB" -gt 0 ]; then
     PART_TYPE=$(sudo blkid -o value -s PTTYPE "$LOOPDEV")
     if [ "$PART_TYPE" = "gpt" ]; then
+        if ! command -v sgdisk &> /dev/null; then
+            echo "GPT disk support requires sgdisk..."
+            sudo apt-get update
+            sudo apt-get install -y sgdisk
+        fi
+
         echo "Fixing GPT backup header..."
         sudo sgdisk -e "$LOOPDEV"
     fi

@@ -25,6 +25,12 @@ if ! mountpoint -q "$MOUNT_DIR"; then
     return 1
 fi
 
+if ! command -v parted &>/dev/null; then
+    echo "Installing parted..."
+    sudo apt-get update
+    sudo apt-get install -y parted
+fi
+
 unmount_with_retries() {
     local mountpoint="$1"
     local retries=0
@@ -160,6 +166,12 @@ if [[ "$FREE_SPACE" =~ "free" ]]; then
     truncate -s "$NEW_SIZE" "$IMG_FILE"
 
     if [[ "$PART_TYPE" == "gpt" ]]; then
+        if ! command -v sgdisk &> /dev/null; then
+            echo "GPT disk support requires sgdisk..."
+            sudo apt-get update
+            sudo apt-get install -y sgdisk
+        fi
+
         sudo sgdisk -e "$IMG_FILE" > /dev/null 2>&1
     fi
 
