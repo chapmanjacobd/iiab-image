@@ -91,7 +91,7 @@ case "$ARCHIVE_FILE" in
     *.raw.tar.gz)
         IMG_FILE="${ARCHIVE_FILE%.tar.gz}.img"
         tar -xzf "$ARCHIVE_FILE" --wildcards '*.raw'
-        mv *.raw "$IMG_FILE" 2>/dev/null || true
+        mv *.raw "$IMG_FILE"
         ;;
     *.img|*.raw)
         IMG_FILE="$ARCHIVE_FILE"

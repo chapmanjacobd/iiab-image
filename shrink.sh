@@ -127,7 +127,7 @@ if [ "$ROOTFS_PARTOLDEND" -gt "$ROOTFS_PARTNEWEND" ]; then
     fi
     if [ -n "$PART_FLAGS" ]; then
         for flag in $(echo "$PART_FLAGS" | tr ',' ' '); do
-            parted --script "$LOOPDEV" set "$ROOT_PARTITION" "$flag" on 2>/dev/null || true
+            parted --script "$LOOPDEV" set "$ROOT_PARTITION" "$flag" on || true
         done
     fi
 
@@ -136,8 +136,8 @@ if [ "$ROOTFS_PARTOLDEND" -gt "$ROOTFS_PARTNEWEND" ]; then
     sync
     partprobe "$LOOPDEV"
 
-    resize2fs "$ROOTDEV" > /dev/null 2>&1
-    tune2fs -m 1 "$ROOTDEV" > /dev/null 2>&1
+    resize2fs "$ROOTDEV" >/dev/null 2>&1
+    tune2fs -m 1 "$ROOTDEV" >/dev/null 2>&1
 else
     echo "Root partition already at minimal size"
 fi
@@ -150,7 +150,7 @@ if [[ "$FREE_SPACE" =~ "free" ]]; then
     if [[ "$PART_TYPE" == "gpt" ]]; then
         NEW_SIZE=$((NEW_SIZE + 1048576))
     else
-        NEW_SIZE=$((NEW_SIZE + 2048))
+        NEW_SIZE=$((NEW_SIZE + 4096))
     fi
 
     echo "Truncating image to $NEW_SIZE bytes..."

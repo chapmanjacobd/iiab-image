@@ -66,7 +66,7 @@ fi
 # Unmount root filesystem
 if [ -d "$MOUNT_DIR" ]; then
     unmount_with_retries "$MOUNT_DIR"
-    rmdir "$MOUNT_DIR" 2>/dev/null || true
+    rmdir "$MOUNT_DIR" || true
 fi
 
 # Detach loop device
