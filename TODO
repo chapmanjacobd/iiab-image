@@ -1,1 +1,3 @@
 look into raspi-config --expand-rootfs
+
+systemd-repart could also be used
