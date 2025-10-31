@@ -57,12 +57,12 @@ expect "login: " { send "root\r" }
 expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash\r" }
 
 expect {
-    timeout { puts "\n❌ Timeout waiting for confirmation."; exit 1 }
-    -re ".*OK.*" { send "\r" }
+    timeout { puts "\nTimed out waiting for confirmation prompt"; exit 1 }
+    "Please press a key" { send "1" }
     eof
 }
 
-expect -re "^#" { send "shutdown now\r" }
+expect -re {#\s?$} { send "shutdown now\r" }
 expect eof
 EXPECT_EOF
 
