@@ -21,7 +21,11 @@ NSPAWN_OPTS=(
     -D "$MOUNT_DIR"             # OS directory
     -M box                      # Set hostname
     --background=""             # disable nspawn terminal coloring
-    # --network-bridge=br0
+    # --network-interface=      # temporarily removes interface from host
+    # --network-veth            # easy if the host runs systemd-networkd
+    # macvlan ipvlan https://wiki.archlinux.org/title/Systemd-networkd#MACVLAN_bridge
+    # --network-zone=br0        # if the host uses systemd-networkd
+    # --network-bridge=br0      # if you already have a bridge interface
 )
 COMMAND=("/bin/bash")
 
