@@ -46,7 +46,7 @@ trap cleanup EXIT
 EXPECT_SCRIPT=$(mktemp)
 cat > "$EXPECT_SCRIPT" << EXPECT_EOF
 #!/usr/bin/expect -f
-set timeout 600
+set timeout 7200
 
 set MOUNT_DIR "$MOUNT_DIR"
 
@@ -58,9 +58,13 @@ expect "login: " { send "root\r" }
 expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash\r" }
 
 expect {
-    timeout { puts "\nTimed out waiting for confirmation prompt"; exit 1 }
+    timeout { puts "\nTimed out waiting for key prompt"; exit 1 }
     "Please press a key" { send "1" }
-    eof
+}
+
+expect {
+    timeout { puts "\nTimed out waiting for final confirmation prompt"; exit 1 }
+    "photograph" { send "\r" }
 }
 
 expect -re {#\s?$} { send "shutdown now\r" }
