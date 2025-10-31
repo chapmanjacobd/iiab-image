@@ -10,26 +10,30 @@ fi
 source "$STATE_FILE"
 : "${MOUNT_DIR:?Error: MOUNT_DIR not set in state file}"
 
+if [ "$EUID" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
 if ! command -v expect &>/dev/null; then
     echo "Installing expect for automation..."
-    sudo apt-get update
-    sudo apt-get install -y expect
+    apt-get update
+    apt-get install -y expect
 fi
 if ! command -v systemd-nspawn &> /dev/null; then
     echo "Installing systemd-container..."
-    sudo apt-get update
-    sudo apt-get install -y systemd-container
+    apt-get update
+    apt-get install -y systemd-container
 fi
 for qemu_bin in /usr/bin/qemu-*-static; do
     if [ -f "$qemu_bin" ]; then
         target_bin="$MOUNT_DIR/usr/bin/${qemu_bin##*/}"
         if [ ! -f "$target_bin" ]; then
-            sudo cp "$qemu_bin" "$target_bin"
+            cp "$qemu_bin" "$target_bin"
         fi
     fi
 done
 
-sudo systemd-firstboot --root="$MOUNT_DIR" --delete-root-password --force
+systemd-firstboot --root="$MOUNT_DIR" --delete-root-password --force
 
 cleanup() {
     echo "Attempting cleanup of temporary files..." >&2
@@ -39,7 +43,7 @@ cleanup() {
     if [ -n "${IIAB_EXPECT_SCRIPT:-}" ] && [ -f "$IIAB_EXPECT_SCRIPT" ]; then
         rm -f "$IIAB_EXPECT_SCRIPT"
     fi
-    sudo systemd-nspawn -k --terminate -D "$MOUNT_DIR" 2>/dev/null || true
+    pgrep -fa "$MOUNT_DIR"
 }
 trap cleanup EXIT
 
@@ -51,7 +55,7 @@ set timeout 7200
 set MOUNT_DIR "$MOUNT_DIR"
 
 # --network-zone=br0 does not share the WiFi interface
-spawn sudo systemd-nspawn -q -D \$MOUNT_DIR --background="" --boot
+spawn systemd-nspawn -q -D \$MOUNT_DIR --background="" --boot
 
 expect "login: " { send "root\r" }
 

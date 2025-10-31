@@ -26,17 +26,21 @@ fi
 source "$STATE_FILE"
 : "${MOUNT_DIR:?Error: MOUNT_DIR not set in state file}"
 
+if [ "$EUID" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
 if ! command -v systemd-nspawn &> /dev/null; then
     echo "Installing systemd-container..."
-    sudo apt-get update
-    sudo apt-get install -y systemd-container
+    apt-get update
+    apt-get install -y systemd-container
 fi
 
 shopt -s nullglob
 for qemu_bin in /usr/bin/qemu-*-static; do
     target_bin="$MOUNT_DIR/usr/bin/${qemu_bin##*/}"
     if [ ! -f "$target_bin" ]; then
-        sudo cp "$qemu_bin" "$target_bin"
+        cp "$qemu_bin" "$target_bin"
     fi
 done
 shopt -u nullglob
@@ -53,7 +57,7 @@ if [ "$COMMAND" = "/bin/bash" ] || [ "$COMMAND" = "bash" ]; then
     echo "Starting interactive shell..."
     echo "Type 'exit' or Ctrl+] three times to return to host system"
     echo ""
-    exec sudo systemd-nspawn "${NSPAWN_OPTS[@]}" /bin/bash
+    exec systemd-nspawn "${NSPAWN_OPTS[@]}" /bin/bash
 else
-    exec sudo systemd-nspawn "${NSPAWN_OPTS[@]}" /bin/bash -c "$COMMAND"
+    exec systemd-nspawn "${NSPAWN_OPTS[@]}" /bin/bash -c "$COMMAND"
 fi

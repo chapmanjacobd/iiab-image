@@ -18,6 +18,10 @@ echo "Loop device: $LOOPDEV"
 echo "Mount point: $MOUNT_DIR"
 echo ""
 
+if [ "$EUID" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
 # Function to unmount with retries
 unmount_with_retries() {
     local mountpoint="$1"
@@ -31,7 +35,7 @@ unmount_with_retries() {
     fi
 
     echo "Unmounting $mountpoint..."
-    while ! sudo umount $force "$mountpoint" 2>/dev/null; do
+    while ! umount $force "$mountpoint" 2>/dev/null; do
         retries=$((retries + 1))
         if [ $retries -ge $max_retries ]; then
             echo "Error: Could not unmount $mountpoint after $retries attempts" >&2
@@ -42,7 +46,7 @@ unmount_with_retries() {
             force="--force"
         fi
         # Kill processes using the mountpoint
-        sudo fuser -ck "$mountpoint" 2>/dev/null || true
+        fuser -ck "$mountpoint" 2>/dev/null || true
         sleep 1
     done
     echo "Unmounted $mountpoint"
@@ -62,14 +66,14 @@ fi
 # Unmount root filesystem
 if [ -d "$MOUNT_DIR" ]; then
     unmount_with_retries "$MOUNT_DIR"
-    sudo rmdir "$MOUNT_DIR" 2>/dev/null || true
+    rmdir "$MOUNT_DIR" 2>/dev/null || true
 fi
 
 # Detach loop device
 if [ -n "$LOOPDEV" ]; then
     if losetup "$LOOPDEV" &>/dev/null; then
         echo "Detaching loop device $LOOPDEV..."
-        sudo losetup --detach "$LOOPDEV"
+        losetup --detach "$LOOPDEV"
         echo "Loop device detached"
     else
         echo "Loop device $LOOPDEV is not active"

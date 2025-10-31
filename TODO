@@ -1,3 +1,1 @@
 look into raspi-config --expand-rootfs
-
-Use less sudo--only elevate when needed

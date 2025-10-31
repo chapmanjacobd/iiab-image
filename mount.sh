@@ -112,15 +112,19 @@ if command -v sfdisk &> /dev/null; then
     sfdisk -r "$IMG_FILE"
 fi
 
+if [ "$EUID" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
 if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
     if ! command -v jq &>/dev/null; then
         echo "Installing jq for JSON parsing..."
-        sudo apt-get update
-        sudo apt-get install -y jq
+        apt-get update
+        apt-get install -y jq
     fi
 
     echo "Partition numbers not explicity set. Attempting to auto-detect using parted on $IMG_FILE..." >&2
-    json_output=$(sudo parted --script "$IMG_FILE" unit B print --json 2>/dev/null)
+    json_output=$(parted --script "$IMG_FILE" unit B print --json 2>/dev/null)
 
     json_input=$(echo "$json_output" | jq '.disk.partitions' 2>/dev/null)
     if [[ -z "$json_input" || "$json_input" == "null" ]]; then
@@ -154,7 +158,7 @@ if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
 
         if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
             echo "Error: Auto-detection failed. Could not uniquely identify partitions after parsing." >&2
-            sudo parted --script "$IMG_FILE" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+            parted --script "$IMG_FILE" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
             exit 1
         fi
 
@@ -178,38 +182,38 @@ if [ "$ADDITIONAL_MB" -gt 0 ]; then
     dd if=/dev/zero bs=4M count=$(( ADDITIONAL_MB / 4 )) >> "$IMG_FILE"
 fi
 
-LOOPDEV=$(sudo losetup --find --show --partscan "$IMG_FILE")
+LOOPDEV=$(losetup --find --show --partscan "$IMG_FILE")
 echo "Created loopback device: $LOOPDEV"
 
 # Resize partition and filesystem
 if [ "$ADDITIONAL_MB" -gt 0 ]; then
-    PART_TYPE=$(sudo blkid -o value -s PTTYPE "$LOOPDEV")
+    PART_TYPE=$(blkid -o value -s PTTYPE "$LOOPDEV")
     if [ "$PART_TYPE" = "gpt" ]; then
         if ! command -v sgdisk &> /dev/null; then
             echo "GPT disk support requires sgdisk..."
-            sudo apt-get update
-            sudo apt-get install -y sgdisk
+            apt-get update
+            apt-get install -y sgdisk
         fi
 
         echo "Fixing GPT backup header..."
-        sudo sgdisk -e "$LOOPDEV"
+        sgdisk -e "$LOOPDEV"
     fi
-    sudo parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+    parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
     echo ""
 
     echo "Resizing partition to use available space"
-    sudo parted --script "$LOOPDEV" resizepart "$ROOT_PARTITION" 100%
-    sudo e2fsck -p -f "${LOOPDEV}p${ROOT_PARTITION}"
-    sudo resize2fs "${LOOPDEV}p${ROOT_PARTITION}"
+    parted --script "$LOOPDEV" resizepart "$ROOT_PARTITION" 100%
+    e2fsck -p -f "${LOOPDEV}p${ROOT_PARTITION}"
+    resize2fs "${LOOPDEV}p${ROOT_PARTITION}"
 
     echo "Partition resize complete:"
-    sudo parted --script "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+    parted --script "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
     echo ""
 fi
 
 # Wait for partition devices
 sync
-sudo partprobe -s "$LOOPDEV"
+partprobe -s "$LOOPDEV"
 
 ROOTDEV=$(wait_for_device_file "${LOOPDEV}p${ROOT_PARTITION}")
 echo "Root device: $ROOTDEV"
@@ -224,14 +228,14 @@ echo ""
 
 # Create mount point
 MOUNT_DIR="${IMG_FILE%.*}"
-sudo mkdir -p "$MOUNT_DIR"
+mkdir -p "$MOUNT_DIR"
 echo "Mount point: $MOUNT_DIR"
-sudo mount "$ROOTDEV" "$MOUNT_DIR"
+mount "$ROOTDEV" "$MOUNT_DIR"
 echo "Root mounted at $MOUNT_DIR"
 if [ -n "$BOOTDEV" ]; then
     BOOT_MOUNT="$MOUNT_DIR/boot"
-    sudo mkdir -p "$BOOT_MOUNT"
-    sudo mount "$BOOTDEV" "$BOOT_MOUNT"
+    mkdir -p "$BOOT_MOUNT"
+    mount "$BOOTDEV" "$BOOT_MOUNT"
     echo "Boot mounted at $BOOT_MOUNT"
 fi
 echo ""

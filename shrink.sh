@@ -20,6 +20,10 @@ echo "Loop device: $LOOPDEV"
 echo "Mount point: $MOUNT_DIR"
 echo "Image file: $IMG_FILE"
 
+if [ "$EUID" -ne 0 ]; then
+    exec sudo "$0" "$@"
+fi
+
 if ! mountpoint -q "$MOUNT_DIR"; then
     echo "$MOUNT_DIR is not a mountpoint"
     return 1
@@ -35,7 +39,7 @@ unmount_with_retries() {
         return 0
     fi
 
-    while ! sudo umount $force "$mountpoint" 2>/dev/null; do
+    while ! umount $force "$mountpoint" 2>/dev/null; do
         retries=$((retries + 1))
         if [ $retries -ge $max_retries ]; then
             echo "Error: Could not unmount $mountpoint after $retries attempts" >&2
@@ -46,7 +50,7 @@ unmount_with_retries() {
             force="--force"
         fi
         # Kill processes using the mountpoint
-        sudo fuser -ck "$mountpoint" 2>/dev/null || true
+        fuser -ck "$mountpoint" 2>/dev/null || true
         sleep 1
     done
     echo "Unmounted $mountpoint"
@@ -54,7 +58,7 @@ unmount_with_retries() {
 
 # Remove QEMU binaries
 for qemu_bin in "$MOUNT_DIR/usr/bin/qemu-*-static"; do
-    sudo rm -f "$qemu_bin" 2>/dev/null || true
+    rm -f "$qemu_bin" 2>/dev/null || true
 done
 
 # Zero-fill boot partition
@@ -71,17 +75,17 @@ if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; t
 
     if [ -n "$BOOT_FILL_PATH" ]; then
         echo "Zero-filling unused blocks on boot filesystem... $BOOT_FILL_PATH"
-        (sudo sh -c "cat /dev/zero > '$BOOT_FILL_PATH/zero.fill'" 2>/dev/null || true)
+        (sh -c "cat /dev/zero > '$BOOT_FILL_PATH/zero.fill'" 2>/dev/null || true)
         sync
-        sudo rm -f "$BOOT_FILL_PATH/zero.fill"
+        rm -f "$BOOT_FILL_PATH/zero.fill"
     fi
 fi
 
 # Zero-fill root partition
 echo "Zero-filling unused blocks on root filesystem... $MOUNT_DIR"
-(sudo sh -c "cat /dev/zero > '$MOUNT_DIR/zero.fill'" 2>/dev/null || true)
+(sh -c "cat /dev/zero > '$MOUNT_DIR/zero.fill'" 2>/dev/null || true)
 sync
-sudo rm -f "$MOUNT_DIR/zero.fill"
+rm -f "$MOUNT_DIR/zero.fill"
 
 echo "Unmounting filesystems..."
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
@@ -97,23 +101,23 @@ if mountpoint -q "$MOUNT_DIR" 2>/dev/null; then
     unmount_with_retries "$MOUNT_DIR"
 fi
 
-sudo parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
 echo ""
 
 echo "Shrinking root filesystem to minimal size..."
 ROOTDEV="${LOOPDEV}p${ROOT_PARTITION}"
 
-sudo e2fsck -p -f "$ROOTDEV"
-sudo resize2fs -M "$ROOTDEV"
+e2fsck -p -f "$ROOTDEV"
+resize2fs -M "$ROOTDEV"
 
-ROOTFS_BLOCKSIZE=$(sudo tune2fs -l "$ROOTDEV" | grep "^Block size" | awk '{print $NF}')
-ROOTFS_BLOCKCOUNT=$(sudo tune2fs -l "$ROOTDEV" | grep "^Block count" | awk '{print $NF}')
+ROOTFS_BLOCKSIZE=$(tune2fs -l "$ROOTDEV" | grep "^Block size" | awk '{print $NF}')
+ROOTFS_BLOCKCOUNT=$(tune2fs -l "$ROOTDEV" | grep "^Block count" | awk '{print $NF}')
 
-PART_INFO=$(sudo parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:")
+PART_INFO=$(parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:")
 ROOTFS_PARTSTART=$(echo "$PART_INFO" | awk -F ":" '{print $2}' | tr -d 'B')
 ROOTFS_PARTOLDEND=$(echo "$PART_INFO" | awk -F ":" '{print $3}' | tr -d 'B')
-PART_NAME=$(sudo parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $6}')
-PART_FLAGS=$(sudo parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $7}' | tr -d ';')
+PART_NAME=$(parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $6}')
+PART_FLAGS=$(parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $7}' | tr -d ';')
 
 ROOTFS_PARTSIZE=$((ROOTFS_BLOCKCOUNT * ROOTFS_BLOCKSIZE))
 ROOTFS_PARTNEWEND=$((ROOTFS_PARTSTART + ROOTFS_PARTSIZE + 104857600))  # 100MB buffer space
@@ -121,30 +125,30 @@ ROOTFS_PARTNEWEND=$((ROOTFS_PARTSTART + ROOTFS_PARTSIZE + 104857600))  # 100MB b
 if [ "$ROOTFS_PARTOLDEND" -gt "$ROOTFS_PARTNEWEND" ]; then
     echo "Shrinking root partition from $ROOTFS_PARTOLDEND to $ROOTFS_PARTNEWEND bytes..."
 
-    sudo parted --script "$LOOPDEV" rm "$ROOT_PARTITION"
-    sudo parted --script "$LOOPDEV" unit b mkpart primary ext4 "$ROOTFS_PARTSTART" "$ROOTFS_PARTNEWEND"
+    parted --script "$LOOPDEV" rm "$ROOT_PARTITION"
+    parted --script "$LOOPDEV" unit b mkpart primary ext4 "$ROOTFS_PARTSTART" "$ROOTFS_PARTNEWEND"
     if [ -n "$PART_NAME" ]; then
-        sudo parted --script "$LOOPDEV" name "$ROOT_PARTITION" "$PART_NAME"
+        parted --script "$LOOPDEV" name "$ROOT_PARTITION" "$PART_NAME"
     fi
     if [ -n "$PART_FLAGS" ]; then
         for flag in $(echo "$PART_FLAGS" | tr ',' ' '); do
-            sudo parted --script "$LOOPDEV" set "$ROOT_PARTITION" "$flag" on 2>/dev/null || true
+            parted --script "$LOOPDEV" set "$ROOT_PARTITION" "$flag" on 2>/dev/null || true
         done
     fi
 
-    sudo parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+    parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
     echo ""
-    sudo sync
-    sudo partprobe "$LOOPDEV"
+    sync
+    partprobe "$LOOPDEV"
 
-    sudo resize2fs "$ROOTDEV" > /dev/null 2>&1
-    sudo tune2fs -m 1 "$ROOTDEV" > /dev/null 2>&1
+    resize2fs "$ROOTDEV" > /dev/null 2>&1
+    tune2fs -m 1 "$ROOTDEV" > /dev/null 2>&1
 else
     echo "Root partition already at minimal size"
 fi
 
-PART_TYPE=$(sudo blkid -o value -s PTTYPE "$LOOPDEV")
-FREE_SPACE=$(sudo parted -m --script "$LOOPDEV" unit B print free | tail -1)
+PART_TYPE=$(blkid -o value -s PTTYPE "$LOOPDEV")
+FREE_SPACE=$(parted -m --script "$LOOPDEV" unit B print free | tail -1)
 
 if [[ "$FREE_SPACE" =~ "free" ]]; then
     NEW_SIZE=$(echo "$FREE_SPACE" | awk -F ":" '{print $2}' | tr -d 'B')
@@ -155,25 +159,25 @@ if [[ "$FREE_SPACE" =~ "free" ]]; then
     fi
 
     echo "Truncating image to $NEW_SIZE bytes..."
-    sudo losetup --detach "$LOOPDEV"  # detach before truncation
+    losetup --detach "$LOOPDEV"  # detach before truncation
     LOOPDEV=""
     truncate -s "$NEW_SIZE" "$IMG_FILE"
 
     if [[ "$PART_TYPE" == "gpt" ]]; then
         if ! command -v sgdisk &> /dev/null; then
             echo "GPT disk support requires sgdisk..."
-            sudo apt-get update
-            sudo apt-get install -y sgdisk
+            apt-get update
+            apt-get install -y sgdisk
         fi
 
-        sudo sgdisk -e "$IMG_FILE" > /dev/null 2>&1
+        sgdisk -e "$IMG_FILE" > /dev/null 2>&1
     fi
 
-    sudo parted --script --fix "$IMG_FILE" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+    parted --script --fix "$IMG_FILE" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
 fi
 
 rm -f "$STATE_FILE"
-sudo rmdir "$MOUNT_DIR"
+rmdir "$MOUNT_DIR"
 
 echo ""
 echo "=========================================="
