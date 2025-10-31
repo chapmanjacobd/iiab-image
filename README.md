@@ -5,7 +5,7 @@ Inspired by [arm-runner-action](https://github.com/pguyot/arm-runner-action)
 Download latest raspios lite by default with 22GB of extra space:
 
 ```sh
-./unpack.sh
+./mount.sh
 Downloading from https://downloads.raspberrypi.org/raspios_lite_arm64_latest...
 ######################################################################### 100.0%
 Extracting raspios_lite_arm64_latest.img.xz...
@@ -19,13 +19,13 @@ Created loopback device: /dev/loop0
 Or for Debian with 5GB extra space:
 
 ```sh
-./unpack.sh https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.raw 5000
+./mount.sh https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.raw 5000
 ```
 
 Or use local image:
 
 ```sh
-./unpack.sh raspios_lite_arm64_latest.img 22000
+./mount.sh raspios_lite_arm64_latest.img 22000
 Partition numbers not explicity set. Attempting to auto-detect using parted on raspios_lite_arm64_latest.img...
 Using boot partition
 Using root partition 2
@@ -82,7 +82,7 @@ Number  Start   End     Size    Type     File system  Flags
 Then manually specify the target disk size, boot, and root partitions:
 
 ```sh
-./unpack.sh raspios_lite_arm64_latest.img 20000 1 2
+./mount.sh raspios_lite_arm64_latest.img 20000 1 2
 ```
 
 Make changes
@@ -109,7 +109,7 @@ Type 'exit' or Ctrl+] three times to return to host system
 Build image
 
 ```sh
-./repack.sh raspios_lite_arm64_latest.img.state
+./shrink.sh raspios_lite_arm64_latest.img.state
 Loading state from raspios_lite_arm64_latest.img.state...
 Loop device: /dev/loop0
 Mount point: ./mnt
