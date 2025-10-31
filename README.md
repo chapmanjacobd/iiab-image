@@ -1,6 +1,21 @@
-# IIAB Image
+# nspawn-loop
 
 Inspired by [arm-runner-action](https://github.com/pguyot/arm-runner-action), [Build your own Container Runtime with chroot - Adam Gordon Bell](https://www.youtube.com/watch?v=89ESCBzM-3Q), [Systemd-Nspawn is Chroot on Steroids - Lennart Poettering](https://www.youtube.com/watch?v=s7LlUs5D9p4)
+## Suggested workflow
+
+1. `./mount.sh raspios_lite_arm64_latest.img`
+
+2. `./install_iiab.sh raspios_lite_arm64_latest.state`
+
+3. (optional) `./chroot.sh raspios_lite_arm64_latest.state --boot`
+
+4. `./shrink.sh raspios_lite_arm64_latest.state`
+
+(or `./unmount` instead to stop work to resume later)
+
+As long as images are unmounted, feel free to make copies to treat as snapshots or different OS "flavours"
+
+## ./mount.sh
 
 Download latest raspios lite by default with 22GB of extra space:
 
@@ -85,6 +100,8 @@ Then manually specify the target disk size, boot, and root partitions:
 ./mount.sh raspios_lite_arm64_latest.img 20000 1 2
 ```
 
+## ./chroot.sh <STATE_FILE>
+
 Make changes
 
 ```sh
@@ -106,7 +123,11 @@ Starting interactive shell...
 Type 'exit' or Ctrl+] three times to return to host system
 ```
 
-Build image
+## ./shrink.sh <STATE_FILE>
+
+Export image
+
+(You must ./mount.sh first to shrink)
 
 ```sh
 ./shrink.sh raspios_lite_arm64_latest.img.state
@@ -142,7 +163,9 @@ To compress, run: xz -v -9 -T0 raspios_lite_arm64_latest.img
 
 ---
 
-To unmount (if you want to not repack)
+## ./unmount.sh <STATE_FILE>
+
+If you want to stop work or export later
 
 ```sh
 ./unmount.sh raspios_lite_arm64_latest.img.state
@@ -171,11 +194,13 @@ sudo losetup --detach /dev/loopX
 
 ---
 
+## Misc
+
 For cross-arch install `qemu-user-static` on the host machine
 
 ---
 
-## Why not machinectl?
+### Why not machinectl?
 
 `machinectl` is really cool--when it works! I'm not sure why, but I often get errors like this:
 
