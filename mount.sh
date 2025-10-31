@@ -171,15 +171,12 @@ CURRENT_BYTES=$(stat -c %s "$IMG_FILE")
 CURRENT_MB=$(( CURRENT_BYTES / 1024 / 1024 ))
 ADDITIONAL_MB=$(( TARGET_MB - CURRENT_MB ))
 
-ALIGN_BLOCK=4
-ADDITIONAL_MB=$(( ( (ADDITIONAL_MB + ALIGN_BLOCK - 1) / ALIGN_BLOCK ) * ALIGN_BLOCK ))
-
 if [ "$ADDITIONAL_MB" -gt 0 ]; then
     echo "Current image size: ${CURRENT_MB}MB"
     echo "Target image size: ${TARGET_MB}MB"
     echo "Adding ${ADDITIONAL_MB}MB to image..."
 
-    dd if=/dev/zero bs=4M count=$(( ADDITIONAL_MB / 4 )) >> "$IMG_FILE"
+    truncate -s "${TARGET_MB}M" "$IMG_FILE"
 fi
 
 LOOPDEV=$(losetup --find --show --partscan "$IMG_FILE")
