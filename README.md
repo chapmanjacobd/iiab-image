@@ -1,6 +1,6 @@
 # IIAB Image
 
-Inspired by [arm-runner-action](https://github.com/pguyot/arm-runner-action), [https://www.youtube.com/watch?v=s7LlUs5D9p4](Systemd-Nspawn is Chroot on Steroids - Lennart Poettering)
+Inspired by [arm-runner-action](https://github.com/pguyot/arm-runner-action), [Systemd-Nspawn is Chroot on Steroids - Lennart Poettering](https://www.youtube.com/watch?v=s7LlUs5D9p4)
 
 Download latest raspios lite by default with 22GB of extra space:
 
