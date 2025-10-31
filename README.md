@@ -25,29 +25,64 @@ Or for Debian with 5GB extra space:
 Or use local image:
 
 ```sh
-./unpack.sh raspios_lite_arm64_latest.img
-Using local file: raspios_lite_arm64_latest.img
-Warning: File doesn't have .xz extension, assuming it's already extracted
-Creating loopback device...
-Created loopback device: /dev/loop0
-/dev/loop0: msdos partitions 1 2
-Root device: /dev/loop0p2
-Boot device: /dev/loop0p1
-Mount point: ./mnt
-Mounting root filesystem...
-Mounting boot filesystem...
-Setting up QEMU for ARM emulation...
+./unpack.sh raspios_lite_arm64_latest.img 22000
+Partition numbers not explicity set. Attempting to auto-detect using parted on raspios_lite_arm64_latest.img...
+Using boot partition
+Using root partition 2
+Using boot partition 1
+Current image size: 2792MB
+Target image size: 22000MB
+Adding 19208MB to image...
+4802+0 records in
+4802+0 records out
+20141047808 bytes (20 GB, 19 GiB) copied, 369.749 s, 54.5 MB/s
+Created loopback device: /dev/loop8
+Number  Start   End     Size    Type     File system  Flags
+        32.3kB  8389kB  8356kB           Free Space
+ 1      8389kB  545MB   537MB   primary  fat32        lba
+ 2      545MB   2928MB  2382MB  primary  ext4
+        2928MB  23.1GB  20.1GB           Free Space
 
-==========================================
-Image unpacked successfully!
-==========================================
-Loop device: /dev/loop0
-Mount point: ./mnt
-State file: raspios_lite_arm64_latest.img.state
+Resizing partition to use available space
+rootfs: 72636/145440 files (0.2% non-contiguous), 502525/581632 blocks
+resize2fs 1.47.2 (1-Jan-2025)
+Resizing the filesystem on /dev/loop8p2 to 5498880 (4k) blocks.
+The filesystem on /dev/loop8p2 is now 5498880 (4k) blocks long.
 
-To enter container: ./chroot.sh raspios_lite_arm64_latest.img.state
-To repack, run: ./repack.sh raspios_lite_arm64_latest.img.state
-==========================================
+Partition resize complete:
+Number  Start   End     Size    Type     File system  Flags
+        32.3kB  8389kB  8356kB           Free Space
+ 1      8389kB  545MB   537MB   primary  fat32        lba
+ 2      545MB   23.1GB  22.5GB  primary  ext4
+
+/dev/loop8: msdos partitions 1 2
+Root device: /dev/loop8p2
+Boot device: /dev/loop8p1
+
+Mount point: raspios_lite_arm64_latest
+Root mounted at raspios_lite_arm64_latest
+Boot mounted at raspios_lite_arm64_latest/boot
+```
+
+If auto-detection fails then use parted to identify the boot partition:
+
+```sh
+sudo parted raspios_lite_arm64_latest.img print
+Model:  (file)
+Disk /home/xk/iiab/github/iiab-image/raspios_lite_arm64_latest.img: 2928MB
+Sector size (logical/physical): 512B/512B
+Partition Table: msdos
+Disk Flags:
+
+Number  Start   End     Size    Type     File system  Flags
+ 1      8389kB  545MB   537MB   primary  fat32        lba
+ 2      545MB   2928MB  2382MB  primary  ext4
+```
+
+Then manually specify the target disk size, boot, and root partitions:
+
+```sh
+./unpack.sh raspios_lite_arm64_latest.img 20000 1 2
 ```
 
 Make changes

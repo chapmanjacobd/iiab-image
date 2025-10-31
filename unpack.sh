@@ -9,12 +9,6 @@ TARGET_MB="${2:-22000}"
 BOOT_PARTITION="${3:-}"
 ROOT_PARTITION="${4:-}"
 
-if ! command -v parted &>/dev/null; then
-    echo "Installing parted..."
-    sudo apt-get update
-    sudo apt-get install -y parted
-fi
-
 download_file() {
     local url="$1"
     local output="$2"
@@ -138,7 +132,6 @@ if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
     if [[ "$partition_count" -gt 1 ]]; then
         if [[ -z "$BOOT_PARTITION" ]]; then
             BOOT_PARTITION=$(echo "$json_input" | jq -r '.[] | select((.flags // []) | contains(["boot"])) | .number')
-            echo "Using boot partition $BOOT_PARTITION"
         fi
 
         if [[ -z "$ROOT_PARTITION" ]]; then
@@ -148,14 +141,25 @@ if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
                 last |
                 .number
             ')
-            echo "Using root partition $ROOT_PARTITION"
+        fi
+
+        if [[ "$partition_count" -eq 2 && -z "$BOOT_PARTITION" ]]; then
+            BOOT_PARTITION=$(echo "$json_input" | jq -r '
+                map(select((.flags // []) )) |
+                sort_by(.start | sub("B$"; "") | tonumber) |
+                first |
+                .number
+            ')
         fi
 
         if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
             echo "Error: Auto-detection failed. Could not uniquely identify partitions after parsing." >&2
-            sudo parted --script "$LOOPDEV" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
+            sudo parted --script "$IMG_FILE" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
             exit 1
         fi
+
+        echo "Using boot partition $BOOT_PARTITION"
+        echo "Using root partition $ROOT_PARTITION"
     fi
 fi
 

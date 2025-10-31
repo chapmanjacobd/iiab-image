@@ -25,12 +25,6 @@ if ! mountpoint -q "$MOUNT_DIR"; then
     return 1
 fi
 
-if ! command -v parted &>/dev/null; then
-    echo "Installing parted..."
-    sudo apt-get update
-    sudo apt-get install -y parted
-fi
-
 unmount_with_retries() {
     local mountpoint="$1"
     local retries=0
