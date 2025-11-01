@@ -1,3 +1,14 @@
 look into raspi-config --expand-rootfs
 
 systemd-repart could also be used
+
+## shrink.sh
+
+apt clean
+rm -rf /var/cache/apt/archives/*.deb
+rm -f /var/log/*log /var/log/*gz
+
+### remove host keys
+rm /etc/ssh/ssh_host_*
+
+systemd-firstboot --timezone=UTC --setup-machine-id --force
