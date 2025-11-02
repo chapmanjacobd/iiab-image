@@ -9,9 +9,9 @@ Inspired by [arm-runner-action](https://github.com/pguyot/arm-runner-action), [B
 
 3. (optional) `./chroot.sh raspios_lite_arm64_latest.state --boot`
 
-4. `./shrink.sh raspios_lite_arm64_latest.state`
+4. (optional; to snapshot or resume work later) `./unmount.sh raspios_lite_arm64_latest.state --boot`
 
-(or `./unmount` instead to stop work to resume later)
+5. `./shrink.sh raspios_lite_arm64_latest.state`
 
 As long as images are unmounted, feel free to make copies to treat as snapshots or different OS "flavours"
 
