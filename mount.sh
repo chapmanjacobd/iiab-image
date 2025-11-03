@@ -107,13 +107,13 @@ if [ -f "${IMG_FILE}.state" ]; then
     exit 32
 fi
 
+if [ "$EUID" -ne 0 ]; then
+    exec sudo "$0" "$IMG_FILE" "${@:2}"
+fi
+
 if command -v sfdisk &> /dev/null; then
     echo "Re-counting partition numbers"
     sfdisk -r "$IMG_FILE"
-fi
-
-if [ "$EUID" -ne 0 ]; then
-    exec sudo "$0" "$IMG_FILE" "${@:2}"
 fi
 
 if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then

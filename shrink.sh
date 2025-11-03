@@ -31,6 +31,33 @@ if ! mountpoint -q "$MOUNT_DIR"; then
     return 1
 fi
 
+# cleanup
+systemd-nspawn -q -D "$MOUNT_DIR" --pipe /bin/bash -eux <<'EOF'
+apt clean
+rm -rf /var/cache/apt/archives/*.deb /var/lib/apt/lists/*
+
+# Remove SSH host keys
+rm -f /etc/ssh/ssh_host_*
+rm -f /var/lib/NetworkManager/*.lease
+
+rm -f /etc/init.d/resize2fs_once
+rm -f /var/log/*log /var/log/*gz
+rm -f /root/.bash_history
+EOF
+
+systemd-firstboot --root="$MOUNT_DIR" --timezone=UTC --setup-machine-id --force
+
+# add instructions to grow the root partition/fs via systemd-repart and systemd-growfs
+systemctl --root="$MOUNT_DIR" enable systemd-repart
+# nb. for PaddingWeight to be useful, you must use blkdiscard before dd:
+# it looks like rpi-imager does this on Linux but maybe not when run on Windows
+cat > "$MOUNT_DIR/etc/repart.d/10-root.conf" <<'EOF'
+[Partition]
+Type=root
+PaddingWeight=100
+GrowFileSystem=yes
+EOF
+
 unmount_with_retries() {
     local mountpoint="$1"
     local retries=0
