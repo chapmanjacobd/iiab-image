@@ -196,7 +196,7 @@ sudo losetup --detach /dev/loopX
 
 ## Misc
 
-For cross-arch install `qemu-user-static` on the host machine
+For cross-arch install `qemu-user-static` on the host machine (but it is slow--it is better to build arm64 images on arm64, etc)
 
 ---
 

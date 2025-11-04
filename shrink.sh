@@ -49,13 +49,14 @@ systemd-firstboot --root="$MOUNT_DIR" --timezone=UTC --setup-machine-id --force
 
 # add instructions to grow the root partition/fs via systemd-repart and systemd-growfs
 systemctl --root="$MOUNT_DIR" enable systemd-repart
-# nb. for PaddingWeight to be useful, you must use blkdiscard before dd:
-# it looks like rpi-imager does this on Linux but maybe not when run on Windows
 cat > "$MOUNT_DIR/etc/repart.d/10-root.conf" <<'EOF'
 [Partition]
 Type=root
-PaddingWeight=100
 GrowFileSystem=yes
+
+# nb. for PaddingWeight to be useful you must run blkdiscard on the device first before dd.
+# It looks like rpi-imager does this for you on Linux but not on Windows
+#PaddingWeight=100
 EOF
 
 unmount_with_retries() {
