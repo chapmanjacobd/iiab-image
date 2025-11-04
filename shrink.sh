@@ -33,6 +33,9 @@ fi
 
 # cleanup
 systemd-nspawn -q -D "$MOUNT_DIR" --pipe /bin/bash -eux <<'EOF'
+apt install systemd-repart
+mkdir -p /etc/repart.d
+
 apt clean
 rm -rf /var/cache/apt/archives/*.deb /var/lib/apt/lists/*
 
@@ -48,7 +51,7 @@ EOF
 systemd-firstboot --root="$MOUNT_DIR" --timezone=UTC --setup-machine-id --force
 
 # add instructions to grow the root partition/fs via systemd-repart and systemd-growfs
-systemctl --root="$MOUNT_DIR" enable systemd-repart
+# TODO: verify that this works on MBR partitions
 cat > "$MOUNT_DIR/etc/repart.d/10-root.conf" <<'EOF'
 [Partition]
 Type=root
