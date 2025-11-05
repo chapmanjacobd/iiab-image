@@ -43,6 +43,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
+PRESET_SCRIPT="$MOUNT_DIR/root/install_preset.sh"
+cat > "$PRESET_SCRIPT" << EOF
+#!/bin/bash
+set -euo pipefail
+
+cd /opt/iiab/iiab-admin-console
+
+scripts/get_kiwix_catalog
+scripts/get_oer2go_catalog
+
+iiab-cmdsrv-ctl 'INST-PRESETS {"preset_id":"test"}'
+
+EOF
+chmod +x "$PRESET_SCRIPT"
+
 EXPECT_SCRIPT=$(mktemp)
 cat > "$EXPECT_SCRIPT" << EXPECT_EOF
 #!/usr/bin/expect -f
@@ -67,6 +82,8 @@ expect {
     timeout { puts "\nTimed out waiting for final confirmation prompt"; exit 1 }
     "photograph" { send "\r" }
 }
+
+expect -re {#\s?$} { send "/root/install_preset.sh\r" }
 
 expect -re {#\s?$} { send "shutdown now\r" }
 expect eof
