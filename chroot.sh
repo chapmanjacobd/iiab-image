@@ -19,6 +19,11 @@ fi
 source "$STATE_FILE"
 : "${MOUNT_DIR:?Error: MOUNT_DIR not set in state file}"
 
+if ! mountpoint -q "$MOUNT_DIR"; then
+    echo "$MOUNT_DIR is not a mountpoint"
+    return 1
+fi
+
 NSPAWN_OPTS=(
     -q                          # quiet
     -D "$MOUNT_DIR"             # OS directory

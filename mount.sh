@@ -106,6 +106,11 @@ if [ -f "${IMG_FILE}.state" ]; then
     echo "${IMG_FILE}.state already exists. Unmount first: ./unmount ${IMG_FILE}.state"
     exit 32
 fi
+MOUNT_DIR="${IMG_FILE%.*}"
+if mountpoint -q "$MOUNT_DIR"; then
+    echo "$MOUNT_DIR is already a mountpoint. Unmount first manually..."
+    return 1
+fi
 
 if [ "$EUID" -ne 0 ]; then
     exec sudo "$0" "$IMG_FILE" "${@:2}"
@@ -224,7 +229,6 @@ fi
 echo ""
 
 # Create mount point
-MOUNT_DIR="${IMG_FILE%.*}"
 mkdir -p "$MOUNT_DIR"
 echo "Mount point: $MOUNT_DIR"
 mount "$ROOTDEV" "$MOUNT_DIR"

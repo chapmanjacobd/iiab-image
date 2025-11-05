@@ -11,8 +11,14 @@ if [ ! -f "$STATE_FILE" ]; then
     echo "Error: State file '$STATE_FILE' not found" >&2
     exit 1
 fi
+
 source "$STATE_FILE"
 : "${MOUNT_DIR:?Error: MOUNT_DIR not set in state file}"
+
+if ! mountpoint -q "$MOUNT_DIR"; then
+    echo "$MOUNT_DIR is not a mountpoint"
+    return 1
+fi
 
 if [ "$EUID" -ne 0 ]; then
     exec sudo "$0" "$@"
