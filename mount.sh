@@ -5,7 +5,7 @@ set -euo pipefail
 DEFAULT_URL="https://downloads.raspberrypi.org/raspios_lite_arm64_latest"
 
 IMAGE_SOURCE="${1:-$DEFAULT_URL}"
-TARGET_MB="${2:-22000}"
+TARGET_MB="${2:-5000}"
 BOOT_PARTITION="${3:-}"
 ROOT_PARTITION="${4:-}"
 
@@ -59,7 +59,7 @@ if [[ "$IMAGE_SOURCE" =~ ^https?:// ]]; then
 
     # Normalize extensions for naming consistency
     case "$CLEANED_FILENAME" in
-        *.img.xz|*.img|*.raw.gz|*.raw.tar.gz)
+        *.img|*.iso|*.xz|*.gz)
             DOWNLOAD_FILE="$CLEANED_FILENAME"
             ;;
         *.raw)
@@ -80,20 +80,20 @@ else
 fi
 
 case "$ARCHIVE_FILE" in
-    *.img.xz)
+    *.xz)
         IMG_FILE="${ARCHIVE_FILE%.xz}"
         xz -d -v "$ARCHIVE_FILE"
         ;;
-    *.raw.gz)
-        IMG_FILE="${ARCHIVE_FILE%.gz}.img"
-        gunzip -c "$ARCHIVE_FILE" > "$IMG_FILE"
-        ;;
-    *.raw.tar.gz)
+    *.tar.gz)
         IMG_FILE="${ARCHIVE_FILE%.tar.gz}.img"
         tar -xzf "$ARCHIVE_FILE" --wildcards '*.raw'
         mv *.raw "$IMG_FILE"
         ;;
-    *.img|*.raw)
+    *.gz)
+        IMG_FILE="${ARCHIVE_FILE%.gz}.img"
+        gunzip -c "$ARCHIVE_FILE" > "$IMG_FILE"
+        ;;
+    *.img|*.raw|*.iso)
         IMG_FILE="$ARCHIVE_FILE"
         ;;
     *)
@@ -128,23 +128,23 @@ if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
         apt-get install -y jq
     fi
 
-    echo "Partition numbers not explicity set. Attempting to auto-detect using parted on $IMG_FILE..." >&2
-    json_output=$(parted --script "$IMG_FILE" unit B print --json 2>/dev/null)
+    echo "Partition numbers not explicity set. Attempting to auto-detect $IMG_FILE..." >&2
+    json_output=$(parted --script "$IMG_FILE" unit B print --json 2>/dev/null || true)
 
-    json_input=$(echo "$json_output" | jq '.disk.partitions' 2>/dev/null)
-    if [[ -z "$json_input" || "$json_input" == "null" ]]; then
-        echo "Error: Could not extract partition data from parted output." >&2
-        exit 1
-    fi
-
-    partition_count=$(echo "$json_input" | jq 'length')
-    if [[ "$partition_count" -gt 1 ]]; then
+    json_partitions=$(echo "$json_output" | jq -c '.disk.partitions' 2>/dev/null)
+    partition_count=$(echo "$json_partitions" | jq 'length')
+    if [[ -z "$json_partitions" || "$json_partitions" == "null" ]]; then
+        echo "No partitions found. Mounting whole block device" >&2
+        ROOT_PARTITION=""
+    elif [[ "$partition_count" -eq 1 ]]; then
+        ROOT_PARTITION=$(echo "$json_partitions" | jq -r '.[] | .number')
+    elif [[ "$partition_count" -gt 1 ]]; then
         if [[ -z "$BOOT_PARTITION" ]]; then
-            BOOT_PARTITION=$(echo "$json_input" | jq -r '.[] | select((.flags // []) | contains(["boot"])) | .number')
+            BOOT_PARTITION=$(echo "$json_partitions" | jq -r '.[] | select((.flags // []) | contains(["boot"])) | .number')
         fi
 
         if [[ -z "$ROOT_PARTITION" ]]; then
-            ROOT_PARTITION=$(echo "$json_input" | jq -r '
+            ROOT_PARTITION=$(echo "$json_partitions" | jq -r '
                 map(select((.flags // []) | contains(["boot"]) | not)) |
                 sort_by(.start | sub("B$"; "") | tonumber) |
                 last |
@@ -153,7 +153,7 @@ if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
         fi
 
         if [[ "$partition_count" -eq 2 && -z "$BOOT_PARTITION" ]]; then
-            BOOT_PARTITION=$(echo "$json_input" | jq -r '
+            BOOT_PARTITION=$(echo "$json_partitions" | jq -r '
                 map(select((.flags // []) )) |
                 sort_by(.start | sub("B$"; "") | tonumber) |
                 first |
@@ -184,7 +184,7 @@ if [ "$ADDITIONAL_MB" -gt 0 ]; then
     truncate -s "${TARGET_MB}M" "$IMG_FILE"
 fi
 
-LOOPDEV=$(losetup --find --show --partscan "$IMG_FILE")
+LOOPDEV=$(losetup --find "$IMG_FILE" --nooverlap --show --partscan)
 echo "Created loopback device: $LOOPDEV"
 
 # Resize partition and filesystem
@@ -204,9 +204,19 @@ if [ "$ADDITIONAL_MB" -gt 0 ]; then
     echo ""
 
     echo "Resizing partition to use available space"
-    parted --script "$LOOPDEV" resizepart "$ROOT_PARTITION" 100%
-    e2fsck -p -f "${LOOPDEV}p${ROOT_PARTITION}"
-    resize2fs "${LOOPDEV}p${ROOT_PARTITION}"
+    if [[ "$ROOT_PARTITION" != "" ]]; then
+        parted --script "$LOOPDEV" resizepart "$ROOT_PARTITION" 100%
+    fi
+
+    echo "Resizing filesystem to end of partition"
+    if [[ -z "$ROOT_PARTITION" || -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ]]; then
+        # losetup unwraps single partitions
+        resize2fs "${LOOPDEV}"
+        e2fsck -p -f "${LOOPDEV}"
+    else
+        resize2fs "${LOOPDEV}p${ROOT_PARTITION}"
+        e2fsck -p -f "${LOOPDEV}p${ROOT_PARTITION}"
+    fi
 
     echo "Partition resize complete:"
     parted --script "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
@@ -215,9 +225,14 @@ fi
 
 # Wait for partition devices
 sync
-partprobe -s "$LOOPDEV"
+partprobe -s "$LOOPDEV" || true
 
-ROOTDEV=$(wait_for_device_file "${LOOPDEV}p${ROOT_PARTITION}")
+if [[ -z "$ROOT_PARTITION" || -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ]]; then
+    # losetup unwraps single partitions
+    ROOTDEV=$(wait_for_device_file "${LOOPDEV}")
+else
+    ROOTDEV=$(wait_for_device_file "${LOOPDEV}p${ROOT_PARTITION}")
+fi
 echo "Root device: $ROOTDEV"
 
 if [ "$BOOT_PARTITION" != "" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then

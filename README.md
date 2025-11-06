@@ -17,7 +17,7 @@ As long as images are unmounted, feel free to make copies to treat as snapshots 
 
 ## ./mount.sh
 
-Download latest raspios lite by default with 22GB of extra space:
+Download latest raspios lite by default with a 5GB target size:
 
 ```sh
 ./mount.sh
@@ -31,10 +31,10 @@ Created loopback device: /dev/loop0
 ...
 ```
 
-Or for Debian with 5GB extra space:
+Or for Debian with 22GB extra space:
 
 ```sh
-./mount.sh https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.raw 5000
+./mount.sh https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.raw 22000
 ```
 
 Or use local image:
