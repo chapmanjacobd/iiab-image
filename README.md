@@ -5,7 +5,7 @@ Inspired by [arm-runner-action](https://github.com/pguyot/arm-runner-action), [B
 
 1. `./mount.sh raspios_lite_arm64_latest.img`
 
-2. `./install_iiab.sh raspios_lite_arm64_latest.state`
+2. `./install_iiab.sh raspios_lite_arm64_latest.state https://raw.githubusercontent.com/iiab/iiab/master/vars/local_vars_small.yml`
 
 3. (optional) `./chroot.sh raspios_lite_arm64_latest.state --boot`
 

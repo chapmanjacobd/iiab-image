@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
+source ./utils.sh
 
 STATE_FILE="${1:?Error: State file required. Usage: $0 <state_file>}"
+IIAB_YML_SOURCE="${2:-}"
+
 if [[ "$STATE_FILE" != *.state ]]; then
   echo "Error: STATE_FILE must end in .state" >&2
   exit 1
@@ -22,6 +24,22 @@ fi
 
 if [ "$EUID" -ne 0 ]; then
     exec sudo "$0" "$@"
+fi
+
+IIAB_YML_DEST="$MOUNT_DIR/etc/iiab/local_vars.yml"
+if [[ "$IIAB_YML_SOURCE" =~ ^https?:// ]]; then
+    if download_file "$IIAB_YML_SOURCE" "$IIAB_YML_DEST"; then
+        echo "Downloaded **$IIAB_YML_SOURCE** to **$IIAB_YML_DEST**"
+    else
+        echo "Error: Download failed: $IIAB_YML_SOURCE" >&2
+        exit 1
+    fi
+elif [ -f "$IIAB_YML_SOURCE" ]; then
+    cp -f "$IIAB_YML_SOURCE" "$IIAB_YML_DEST"
+    echo "Copied **$IIAB_YML_SOURCE** to **$IIAB_YML_DEST**"
+else
+    echo "Error: '$IIAB_YML_SOURCE' is neither a file nor a URL." >&2
+    exit 1
 fi
 
 if ! command -v expect &>/dev/null; then
@@ -78,11 +96,6 @@ spawn systemd-nspawn -q -D \$MOUNT_DIR -M box --background="" --boot
 expect "login: " { send "root\r" }
 
 expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash\r" }
-
-expect {
-    timeout { puts "\nTimed out waiting for key prompt"; exit 1 }
-    "Please press a key" { send "1" }
-}
 
 expect {
     timeout { puts "\nTimed out waiting for final confirmation prompt"; exit 1 }
