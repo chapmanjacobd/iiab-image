@@ -3,7 +3,7 @@
 Inspired by [arm-runner-action](https://github.com/pguyot/arm-runner-action), [Build your own Container Runtime with chroot - Adam Gordon Bell](https://www.youtube.com/watch?v=89ESCBzM-3Q), [Systemd-Nspawn is Chroot on Steroids - Lennart Poettering](https://www.youtube.com/watch?v=s7LlUs5D9p4)
 ## Suggested workflow
 
-1. `./mount.sh raspios_lite_arm64_latest.img`
+1. `./mount.sh`
 
 2. `./install_iiab.sh raspios_lite_arm64_latest.state https://raw.githubusercontent.com/iiab/iiab/master/vars/local_vars_small.yml`
 
