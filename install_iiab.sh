@@ -27,6 +27,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 IIAB_YML_DEST="$MOUNT_DIR/etc/iiab/local_vars.yml"
+mkdir -p $(dirname "$IIAB_YML_DEST")
 if [[ "$IIAB_YML_SOURCE" =~ ^https?:// ]]; then
     if download_file "$IIAB_YML_SOURCE" "$IIAB_YML_DEST"; then
         echo "Downloaded **$IIAB_YML_SOURCE** to **$IIAB_YML_DEST**"
