@@ -49,9 +49,9 @@ if ! command -v expect &>/dev/null; then
     apt-get install -y expect
 fi
 if ! command -v systemd-nspawn &> /dev/null; then
-    echo "Installing systemd-container and slirp4netns..."
+    echo "Installing systemd-container..."
     apt-get update
-    apt-get install -y systemd-container slirp4netns
+    apt-get install -y systemd-container
 fi
 
 if ! systemctl is-active --quiet systemd-networkd; then
@@ -67,12 +67,20 @@ fi
 # Enable IPv4 forwarding for NAT/Internet access
 sysctl -w net.ipv4.ip_forward=1
 
-# Ensure NAT (Masquerading) is enabled on the host for the container network
-# systemd-nspawn usually uses 192.168.59.0/24 or similar for veth
+# Ensure NAT (Masquerading) and Forwarding is enabled on the host for the container network
 if ! command -v iptables &> /dev/null; then
     apt-get update && apt-get install -y iptables
 fi
-iptables -t nat -A POSTROUTING -j MASQUERADE
+
+# Detect primary interface for NAT
+EXT_IF=$(ip route | grep default | awk '{print $5}' | head -n1)
+
+# Enable Masquerading
+iptables -t nat -A POSTROUTING -o "$EXT_IF" -j MASQUERADE
+
+# Explicitly allow forwarding for systemd-nspawn virtual interfaces
+iptables -A FORWARD -i ve-+ -o "$EXT_IF" -j ACCEPT
+iptables -A FORWARD -i "$EXT_IF" -o ve-+ -m state --state RELATED,ESTABLISHED -j ACCEPT
 
 systemd-firstboot --root="$MOUNT_DIR" --delete-root-password --force
 
@@ -116,9 +124,9 @@ set timeout 7200
 set MOUNT_DIR "$MOUNT_DIR"
 
 # https://quantum5.ca/2025/03/22/whirlwind-tour-of-systemd-nspawn-containers/#networking
-# --network-veth + --network-slirp is the most reliable way to get internet in CI
+# --network-veth creates a separate network namespace with a virtual ethernet link
 # --resolv-conf=off stops systemd-nspawn from overwriting our manual /etc/resolv.conf
-spawn systemd-nspawn -q --network-veth --network-slirp --resolv-conf=off -D \$MOUNT_DIR -M box --boot
+spawn systemd-nspawn -q --network-veth --resolv-conf=off -D \$MOUNT_DIR -M box --boot
 
 expect "login: " { send "root\r" }
 
