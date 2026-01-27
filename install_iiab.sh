@@ -130,6 +130,8 @@ spawn systemd-nspawn -q --network-veth --resolv-conf=off -D \$MOUNT_DIR -M box -
 
 expect "login: " { send "root\r" }
 
+expect -re {#\s?$} { send "apt update && DEBIAN_FRONTEND=noninteractive apt upgrade -y\r" }
+
 expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash -s 4250\r" }
 
 expect {
