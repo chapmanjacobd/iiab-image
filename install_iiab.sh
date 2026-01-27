@@ -54,7 +54,40 @@ if ! command -v systemd-nspawn &> /dev/null; then
     apt-get install -y systemd-container
 fi
 
+if ! systemctl is-active --quiet systemd-networkd; then
+    echo "Starting systemd-networkd for container networking..."
+    systemctl start systemd-networkd
+fi
+
+if ! systemctl is-active --quiet systemd-resolved; then
+    echo "Starting systemd-resolved for DNS management..."
+    systemctl start systemd-resolved
+fi
+
+# Enable IPv4 forwarding for NAT/Internet access
+sysctl -w net.ipv4.ip_forward=1
+
+# Ensure NAT (Masquerading) and Forwarding is enabled on the host for the container network
+if ! command -v iptables &> /dev/null; then
+    apt-get update && apt-get install -y iptables
+fi
+
+# Detect primary interface for NAT
+EXT_IF=$(ip route | grep default | awk '{print $5}' | head -n1)
+
+# Enable Masquerading
+iptables -t nat -A POSTROUTING -o "$EXT_IF" -j MASQUERADE
+
+# Explicitly allow forwarding for systemd-nspawn virtual interfaces
+iptables -A FORWARD -i ve-+ -o "$EXT_IF" -j ACCEPT
+iptables -A FORWARD -i "$EXT_IF" -o ve-+ -m state --state RELATED,ESTABLISHED -j ACCEPT
+
 systemd-firstboot --root="$MOUNT_DIR" --delete-root-password --force
+
+# Manually set DNS to avoid host loopback/127.0.0.53 issues
+mkdir -p "$MOUNT_DIR/etc"
+echo "nameserver 8.8.8.8" > "$MOUNT_DIR/etc/resolv.conf"
+echo "nameserver 1.1.1.1" >> "$MOUNT_DIR/etc/resolv.conf"
 
 cleanup() {
     echo "Attempting cleanup of temporary files..." >&2
@@ -90,13 +123,14 @@ set timeout 7200
 
 set MOUNT_DIR "$MOUNT_DIR"
 
-# --network-zone=br0 does not share the WiFi interface
 # https://quantum5.ca/2025/03/22/whirlwind-tour-of-systemd-nspawn-containers/#networking
-spawn systemd-nspawn -q -D \$MOUNT_DIR -M box --background="" --boot
+# --network-veth creates a separate network namespace with a virtual ethernet link
+# --resolv-conf=off stops systemd-nspawn from overwriting our manual /etc/resolv.conf
+spawn systemd-nspawn -q --network-veth --resolv-conf=off -D \$MOUNT_DIR -M box --boot
 
 expect "login: " { send "root\r" }
 
-expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash\r" }
+expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash -s 4250\r" }
 
 expect {
     timeout { puts "\nTimed out waiting for final confirmation prompt"; exit 1 }
