@@ -49,9 +49,9 @@ if ! command -v expect &>/dev/null; then
     apt-get install -y expect
 fi
 if ! command -v systemd-nspawn &> /dev/null; then
-    echo "Installing systemd-container..."
+    echo "Installing systemd-container and slirp4netns..."
     apt-get update
-    apt-get install -y systemd-container
+    apt-get install -y systemd-container slirp4netns
 fi
 
 if ! systemctl is-active --quiet systemd-networkd; then
@@ -116,9 +116,9 @@ set timeout 7200
 set MOUNT_DIR "$MOUNT_DIR"
 
 # https://quantum5.ca/2025/03/22/whirlwind-tour-of-systemd-nspawn-containers/#networking
-# --network-veth creates a separate network namespace with a virtual ethernet link
+# --network-veth + --network-slirp is the most reliable way to get internet in CI
 # --resolv-conf=off stops systemd-nspawn from overwriting our manual /etc/resolv.conf
-spawn systemd-nspawn -q --network-veth --resolv-conf=off -D \$MOUNT_DIR -M box --boot
+spawn systemd-nspawn -q --network-veth --network-slirp --resolv-conf=off -D \$MOUNT_DIR -M box --boot
 
 expect "login: " { send "root\r" }
 
