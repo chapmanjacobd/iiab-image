@@ -130,7 +130,7 @@ spawn systemd-nspawn -q --network-veth --resolv-conf=off -D \$MOUNT_DIR -M box -
 
 expect "login: " { send "root\r" }
 
-expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash\r" }
+expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash -s 4250\r" }
 
 expect {
     timeout { puts "\nTimed out waiting for final confirmation prompt"; exit 1 }
