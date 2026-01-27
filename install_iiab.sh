@@ -136,8 +136,10 @@ expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash -s 4250\r" }
 
 expect {
     timeout { puts "\nTimed out waiting for final confirmation prompt"; exit 1 }
-    "photograph" { send "\r" }
+    "photographed" { send "\r" }
 }
+# rebooting
+expect "login: " { send "root\r" }
 
 expect -re {#\s?$} { send "/root/install_preset.sh\r" }
 
