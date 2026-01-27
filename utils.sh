@@ -40,3 +40,32 @@ wait_for_device_file() {
     done
     compgen -G "$pattern"
 }
+
+unmount_with_retries() {
+    local mountpoint="$1"
+    local retries=0
+    local max_retries=10
+    local force=""
+
+    if ! mountpoint -q "$mountpoint" 2>/dev/null; then
+        echo "$mountpoint is not mounted"
+        return 0
+    fi
+
+    echo "Unmounting $mountpoint..."
+    while ! umount $force "$mountpoint" 2>/dev/null; do
+        retries=$((retries + 1))
+        if [ $retries -ge $max_retries ]; then
+            echo "Error: Could not unmount $mountpoint after $retries attempts" >&2
+            return 1
+        fi
+        if [ $retries -eq 5 ]; then
+            echo "Trying force unmount..."
+            force="--force"
+        fi
+        # Kill processes using the mountpoint
+        fuser -ck "$mountpoint" 2>/dev/null || true
+        sleep 1
+    done
+    echo "Unmounted $mountpoint"
+}

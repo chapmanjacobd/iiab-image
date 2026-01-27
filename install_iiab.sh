@@ -19,7 +19,7 @@ source "$STATE_FILE"
 
 if ! mountpoint -q "$MOUNT_DIR"; then
     echo "$MOUNT_DIR is not a mountpoint"
-    return 1
+    exit 1
 fi
 
 if [ "$EUID" -ne 0 ]; then
@@ -64,7 +64,7 @@ cleanup() {
     if [ -n "${IIAB_EXPECT_SCRIPT:-}" ] && [ -f "$IIAB_EXPECT_SCRIPT" ]; then
         rm -f "$IIAB_EXPECT_SCRIPT"
     fi
-    pgrep -fa "$MOUNT_DIR"
+    pgrep -fa "$MOUNT_DIR" || true
 }
 trap cleanup EXIT
 

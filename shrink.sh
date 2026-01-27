@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+source ./utils.sh
 
 # Parse arguments
 STATE_FILE="${1:?Error: State file required. Usage: $0 <state_file>}"
@@ -28,7 +29,7 @@ fi
 
 if ! mountpoint -q "$MOUNT_DIR"; then
     echo "$MOUNT_DIR is not a mountpoint"
-    return 1
+    exit 1
 fi
 
 # cleanup
@@ -61,33 +62,6 @@ GrowFileSystem=yes
 # It looks like rpi-imager does this for you on Linux but not on Windows
 #PaddingWeight=100
 EOF
-
-unmount_with_retries() {
-    local mountpoint="$1"
-    local retries=0
-    local max_retries=10
-    local force=""
-
-    if ! mountpoint -q "$mountpoint"; then
-        return 0
-    fi
-
-    while ! umount $force "$mountpoint" 2>/dev/null; do
-        retries=$((retries + 1))
-        if [ $retries -ge $max_retries ]; then
-            echo "Error: Could not unmount $mountpoint after $retries attempts" >&2
-            return 1
-        fi
-        if [ $retries -eq 5 ]; then
-            echo "Trying force unmount..."
-            force="--force"
-        fi
-        # Kill processes using the mountpoint
-        fuser -ck "$mountpoint" 2>/dev/null || true
-        sleep 1
-    done
-    echo "Unmounted $mountpoint"
-}
 
 # Zero-fill boot partition
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then

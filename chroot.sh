@@ -21,7 +21,7 @@ source "$STATE_FILE"
 
 if ! mountpoint -q "$MOUNT_DIR"; then
     echo "$MOUNT_DIR is not a mountpoint"
-    return 1
+    exit 1
 fi
 
 NSPAWN_OPTS=(
