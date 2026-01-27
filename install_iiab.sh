@@ -126,8 +126,8 @@ set MOUNT_DIR "$MOUNT_DIR"
 # https://quantum5.ca/2025/03/22/whirlwind-tour-of-systemd-nspawn-containers/#networking
 # --network-veth creates a separate network namespace with a virtual ethernet link
 # --resolv-conf=off stops systemd-nspawn from overwriting our manual /etc/resolv.conf
-# --capability=CAP_SYS_ADMIN + --system-call-filter=@system-service allows the container to modify sysctl
-spawn systemd-nspawn -q --network-veth --resolv-conf=off --capability=CAP_SYS_ADMIN --system-call-filter=@system-service -D \$MOUNT_DIR -M box --boot
+# --capability=all + @privileged gives the installer full system access
+spawn systemd-nspawn -q --network-veth --resolv-conf=off --capability=all --system-call-filter=@privileged -D \$MOUNT_DIR -M box --boot
 
 expect "login: " { send "root\r" }
 
