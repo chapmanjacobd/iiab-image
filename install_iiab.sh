@@ -67,7 +67,19 @@ fi
 # Enable IPv4 forwarding for NAT/Internet access
 sysctl -w net.ipv4.ip_forward=1
 
+# Ensure NAT (Masquerading) is enabled on the host for the container network
+# systemd-nspawn usually uses 192.168.59.0/24 or similar for veth
+if ! command -v iptables &> /dev/null; then
+    apt-get update && apt-get install -y iptables
+fi
+iptables -t nat -A POSTROUTING -j MASQUERADE
+
 systemd-firstboot --root="$MOUNT_DIR" --delete-root-password --force
+
+# Manually set DNS to avoid host loopback/127.0.0.53 issues
+mkdir -p "$MOUNT_DIR/etc"
+echo "nameserver 8.8.8.8" > "$MOUNT_DIR/etc/resolv.conf"
+echo "nameserver 1.1.1.1" >> "$MOUNT_DIR/etc/resolv.conf"
 
 cleanup() {
     echo "Attempting cleanup of temporary files..." >&2
@@ -105,8 +117,8 @@ set MOUNT_DIR "$MOUNT_DIR"
 
 # https://quantum5.ca/2025/03/22/whirlwind-tour-of-systemd-nspawn-containers/#networking
 # --network-veth creates a separate network namespace with a virtual ethernet link
-# --resolv-conf=copy-static ensures we use real upstream DNS servers instead of the local stub
-spawn systemd-nspawn -q --network-veth --resolv-conf=copy-static -D \$MOUNT_DIR -M box --boot
+# --resolv-conf=off stops systemd-nspawn from overwriting our manual /etc/resolv.conf
+spawn systemd-nspawn -q --network-veth --resolv-conf=off -D \$MOUNT_DIR -M box --boot
 
 expect "login: " { send "root\r" }
 
