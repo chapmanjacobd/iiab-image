@@ -59,6 +59,11 @@ if ! systemctl is-active --quiet systemd-networkd; then
     systemctl start systemd-networkd
 fi
 
+if ! systemctl is-active --quiet systemd-resolved; then
+    echo "Starting systemd-resolved for DNS management..."
+    systemctl start systemd-resolved
+fi
+
 # Enable IPv4 forwarding for NAT/Internet access
 sysctl -w net.ipv4.ip_forward=1
 
@@ -100,8 +105,8 @@ set MOUNT_DIR "$MOUNT_DIR"
 
 # https://quantum5.ca/2025/03/22/whirlwind-tour-of-systemd-nspawn-containers/#networking
 # --network-veth creates a separate network namespace with a virtual ethernet link
-# --resolv-conf=copy-host ensures DNS works inside the container
-spawn systemd-nspawn -q --network-veth --resolv-conf=copy-host -D \$MOUNT_DIR -M box --boot
+# --resolv-conf=copy-static ensures we use real upstream DNS servers instead of the local stub
+spawn systemd-nspawn -q --network-veth --resolv-conf=copy-static -D \$MOUNT_DIR -M box --boot
 
 expect "login: " { send "root\r" }
 
