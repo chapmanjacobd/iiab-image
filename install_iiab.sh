@@ -54,6 +54,11 @@ if ! command -v systemd-nspawn &> /dev/null; then
     apt-get install -y systemd-container
 fi
 
+if ! systemctl is-active --quiet systemd-networkd; then
+    echo "Starting systemd-networkd for container networking..."
+    systemctl start systemd-networkd
+fi
+
 systemd-firstboot --root="$MOUNT_DIR" --delete-root-password --force
 
 cleanup() {
@@ -90,9 +95,9 @@ set timeout 7200
 
 set MOUNT_DIR "$MOUNT_DIR"
 
-# --network-zone=br0 does not share the WiFi interface
 # https://quantum5.ca/2025/03/22/whirlwind-tour-of-systemd-nspawn-containers/#networking
-spawn systemd-nspawn -q -D \$MOUNT_DIR -M box --boot
+# --network-veth creates a separate network namespace with a virtual ethernet link
+spawn systemd-nspawn -q --network-veth -D \$MOUNT_DIR -M box --boot
 
 expect "login: " { send "root\r" }
 
