@@ -28,7 +28,7 @@ NSPAWN_OPTS=(
     -q                          # quiet
     -D "$MOUNT_DIR"             # OS directory
     -M box                      # Set hostname
-    --background=""             # disable nspawn terminal coloring
+    # --background=""             # disable nspawn terminal coloring
     # --resolv-conf=bind-stub     # https://man.archlinux.org/man/systemd-nspawn.1#Integration_Options
     # --resolv-conf=bind-host   # if not using systemd-resolved
     # --network-interface=      # temporarily removes interface from host
