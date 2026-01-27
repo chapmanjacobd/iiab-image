@@ -59,6 +59,9 @@ if ! systemctl is-active --quiet systemd-networkd; then
     systemctl start systemd-networkd
 fi
 
+# Enable IPv4 forwarding for NAT/Internet access
+sysctl -w net.ipv4.ip_forward=1
+
 systemd-firstboot --root="$MOUNT_DIR" --delete-root-password --force
 
 cleanup() {
@@ -97,7 +100,8 @@ set MOUNT_DIR "$MOUNT_DIR"
 
 # https://quantum5.ca/2025/03/22/whirlwind-tour-of-systemd-nspawn-containers/#networking
 # --network-veth creates a separate network namespace with a virtual ethernet link
-spawn systemd-nspawn -q --network-veth -D \$MOUNT_DIR -M box --boot
+# --resolv-conf=copy-host ensures DNS works inside the container
+spawn systemd-nspawn -q --network-veth --resolv-conf=copy-host -D \$MOUNT_DIR -M box --boot
 
 expect "login: " { send "root\r" }
 
