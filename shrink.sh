@@ -34,7 +34,6 @@ fi
 
 # cleanup
 systemd-nspawn -q -D "$MOUNT_DIR" --pipe /bin/bash -eux <<'EOF'
-apt install systemd-repart
 mkdir -p /etc/repart.d
 
 apt clean

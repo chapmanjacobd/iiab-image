@@ -85,7 +85,6 @@ iptables -A FORWARD -i "$EXT_IF" -o ve-+ -m state --state RELATED,ESTABLISHED -j
 systemd-firstboot --root="$MOUNT_DIR" --delete-root-password --force
 
 # Manually set DNS to avoid host loopback/127.0.0.53 issues
-mkdir -p "$MOUNT_DIR/etc"
 echo "nameserver 8.8.8.8" > "$MOUNT_DIR/etc/resolv.conf"
 echo "nameserver 1.1.1.1" >> "$MOUNT_DIR/etc/resolv.conf"
 
@@ -133,6 +132,7 @@ expect "login: " { send "root\r" }
 expect -re {#\s?$} { send "apt update\r" }
 expect -re {#\s?$} { send "apt list --installed 2>/dev/null | grep -E 'linux-image|linux-headers' | cut -d/ -f1 | xargs apt-mark hold\r" }
 expect -re {#\s?$} { send "DEBIAN_FRONTEND=noninteractive apt upgrade -y\r" }
+expect -re {#\s?$} { send "DEBIAN_FRONTEND=noninteractive apt install -y systemd-repart\r" }
 
 expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash -s 4250\r" }
 
