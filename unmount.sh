@@ -31,6 +31,8 @@ fi
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "${ROOT_PARTITION:-2}" ]; then
     if [ -n "${BOOT_MOUNT:-}" ] && [ -d "$BOOT_MOUNT" ]; then
         unmount_with_retries "$BOOT_MOUNT"
+    elif [ -d "$MOUNT_DIR/boot/firmware" ]; then
+        unmount_with_retries "$MOUNT_DIR/boot/firmware"
     elif [ -d "$MOUNT_DIR/boot/efi" ]; then
         unmount_with_retries "$MOUNT_DIR/boot/efi"
     elif [ -d "$MOUNT_DIR/boot" ]; then

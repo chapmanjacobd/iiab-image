@@ -209,7 +209,11 @@ echo "Mount point: $MOUNT_DIR"
 mount "$ROOTDEV" "$MOUNT_DIR"
 echo "Root mounted at $MOUNT_DIR"
 if [ -n "$BOOTDEV" ]; then
-    BOOT_MOUNT="$MOUNT_DIR/boot"
+    if [ -d "$MOUNT_DIR/boot/firmware" ]; then
+        BOOT_MOUNT="$MOUNT_DIR/boot/firmware"
+    else
+        BOOT_MOUNT="$MOUNT_DIR/boot"
+    fi
     mkdir -p "$BOOT_MOUNT"
     mount "$BOOTDEV" "$BOOT_MOUNT"
     echo "Boot mounted at $BOOT_MOUNT"
