@@ -131,7 +131,7 @@ spawn systemd-nspawn -q --network-veth --resolv-conf=off -D \$MOUNT_DIR -M box -
 expect "login: " { send "root\r" }
 
 expect -re {#\s?$} { send "apt update\r" }
-expect -re {#\s?$} { send "apt-mark hold \$(apt list --installed 2>/dev/null | grep -E 'linux-image|linux-headers' | cut -d/ -f1)\r" }
+expect -re {#\s?$} { send "apt-mark hold \\\$(apt list --installed 2>/dev/null | grep -E 'linux-image|linux-headers' | cut -d/ -f1)\r" }
 expect -re {#\s?$} { send "DEBIAN_FRONTEND=noninteractive apt upgrade -y\r" }
 
 expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash -s 4250\r" }
@@ -145,7 +145,7 @@ expect "login: " { send "root\r" }
 
 expect -re {#\s?$} { send "/root/install_preset.sh\r" }
 
-expect -re {#\s?$} { send "apt-mark unhold \$(apt-mark showhold)\r" }
+expect -re {#\s?$} { send "apt-mark unhold \\\$(apt-mark showhold)\r" }
 expect -re {#\s?$} { send "shutdown now\r" }
 expect eof
 EXPECT_EOF
