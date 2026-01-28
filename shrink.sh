@@ -43,24 +43,11 @@ rm -rf /var/cache/apt/archives/*.deb /var/lib/apt/lists/*
 rm -f /etc/ssh/ssh_host_*
 rm -f /var/lib/NetworkManager/*.lease
 
-rm -f /etc/init.d/resize2fs_once
 rm -f /var/log/*log /var/log/*gz
 rm -f /root/.bash_history
 EOF
 
 systemd-firstboot --root="$MOUNT_DIR" --timezone=UTC --setup-machine-id --force
-
-# add instructions to grow the root partition/fs via systemd-repart and systemd-growfs
-# TODO: verify that this works on MBR partitions
-cat > "$MOUNT_DIR/etc/repart.d/10-root.conf" <<'EOF'
-[Partition]
-Type=root
-GrowFileSystem=yes
-
-# nb. for PaddingWeight to be useful you must run blkdiscard on the device first before dd.
-# It looks like rpi-imager does this for you on Linux but not on Windows
-#PaddingWeight=100
-EOF
 
 # Zero-fill boot partition
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
@@ -121,7 +108,7 @@ PART_NAME=$(parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION
 PART_FLAGS=$(parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $7}' | tr -d ';')
 
 ROOTFS_PARTSIZE=$((ROOTFS_BLOCKCOUNT * ROOTFS_BLOCKSIZE))
-ROOTFS_PARTNEWEND=$((ROOTFS_PARTSTART + ROOTFS_PARTSIZE + 104857600))  # 100MB buffer space
+ROOTFS_PARTNEWEND=$((ROOTFS_PARTSTART + ROOTFS_PARTSIZE + 1073741824))  # 1GB buffer space
 
 if [ "$ROOTFS_PARTOLDEND" -gt "$ROOTFS_PARTNEWEND" ]; then
     echo "Shrinking root partition from $ROOTFS_PARTOLDEND to $ROOTFS_PARTNEWEND bytes..."

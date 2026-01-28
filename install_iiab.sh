@@ -132,7 +132,6 @@ expect "login: " { send "root\r" }
 expect -re {#\s?$} { send "apt update\r" }
 expect -re {#\s?$} { send "apt list --installed 2>/dev/null | grep -E 'linux-image|linux-headers' | cut -d/ -f1 | xargs apt-mark hold\r" }
 expect -re {#\s?$} { send "DEBIAN_FRONTEND=noninteractive apt upgrade -y\r" }
-expect -re {#\s?$} { send "DEBIAN_FRONTEND=noninteractive apt install -y systemd-repart\r" }
 
 expect -re {#\s?$} { send "curl iiab.io/risky.txt | bash -s 4250\r" }
 
