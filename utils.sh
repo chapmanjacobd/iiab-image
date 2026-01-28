@@ -9,13 +9,17 @@ download_file() {
             --summary-interval=0 \
             --download-result=hide \
             --follow-metalink=mem \
+            --follow-torrent=mem \
             --max-connection-per-server=4 \
             --min-split-size=5M \
             --continue=true \
             --file-allocation=falloc \
             --enable-http-pipelining=true \
-            -o "$output" \
+            --allow-overwrite=true \
+            --dir="$output.dir" \
             "$url"
+        find "$output.dir" -type f -exec mv {} "$output" \;
+        rmdir "$output.dir"
     elif command -v curl &> /dev/null; then
         echo "aria2c not found. Falling back to curl..."
         curl -L --progress-bar -o "$output" "$url"
