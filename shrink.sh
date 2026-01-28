@@ -19,13 +19,13 @@ source "$STATE_FILE"
 : "${IMG_FILE:?Error: IMG_FILE not set in state file}"
 : "${ROOT_PARTITION:?Error: ROOT_PARTITION not set in state file}"
 
-echo "Loop device: $LOOPDEV"
-echo "Mount point: $MOUNT_DIR"
-echo "Image file: $IMG_FILE"
-
 if [ "$EUID" -ne 0 ]; then
     exec sudo "$0" "$@"
 fi
+
+echo "Loop device: $LOOPDEV"
+echo "Mount point: $MOUNT_DIR"
+echo "Image file: $IMG_FILE"
 
 if ! mountpoint -q "$MOUNT_DIR"; then
     echo "$MOUNT_DIR is not a mountpoint"
@@ -34,8 +34,6 @@ fi
 
 # cleanup
 systemd-nspawn -q -D "$MOUNT_DIR" --pipe /bin/bash -eux <<'EOF'
-mkdir -p /etc/repart.d
-
 apt clean
 rm -rf /var/cache/apt/archives/*.deb /var/lib/apt/lists/*
 
@@ -45,9 +43,12 @@ rm -f /var/lib/NetworkManager/*.lease
 
 rm -f /var/log/*log /var/log/*gz
 rm -f /root/.bash_history
+
+touch /.resize-rootfs
 EOF
 
 systemd-firstboot --root="$MOUNT_DIR" --timezone=UTC --setup-machine-id --force
+echo uninitialized > "$MOUNT_DIR/etc/machine-id"
 
 # Zero-fill boot partition
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
@@ -93,6 +94,7 @@ if mountpoint -q "$MOUNT_DIR" 2>/dev/null; then
     unmount_with_retries "$MOUNT_DIR"
 fi
 
+echo ""
 parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
 echo ""
 
@@ -112,28 +114,33 @@ PART_NAME=$(parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION
 PART_FLAGS=$(parted -m --script "$LOOPDEV" unit B print | grep "^${ROOT_PARTITION}:" | awk -F ":" '{print $7}' | tr -d ';')
 
 ROOTFS_PARTSIZE=$((ROOTFS_BLOCKCOUNT * ROOTFS_BLOCKSIZE))
-ROOTFS_PARTNEWEND=$((ROOTFS_PARTSTART + ROOTFS_PARTSIZE + 1073741824))  # 1GB buffer space
+# Calculate padding to include 1% reserved blocks + 100MB free space
+# We want: FinalSize - (FinalSize * 0.01) = CurrentUsedSize + 100MB
+# So: FinalSize * 0.99 = ROOTFS_PARTSIZE + 100MB
+# FinalSize = (ROOTFS_PARTSIZE + 100MB) / 0.99
+# Let's approximate /0.99 with *1.011 for safety
+BUFFER_SIZE=$((100 * 1024 * 1024))
+TARGET_USER_SPACE=$((ROOTFS_PARTSIZE + BUFFER_SIZE))
+TOTAL_REQUIRED_SIZE=$(( (TARGET_USER_SPACE * 1011) / 1000 ))
+ROOTFS_PARTNEWEND=$((ROOTFS_PARTSTART + TOTAL_REQUIRED_SIZE - 1))
 
 if [ "$ROOTFS_PARTOLDEND" -gt "$ROOTFS_PARTNEWEND" ]; then
-    echo "Shrinking root partition from $ROOTFS_PARTOLDEND to $ROOTFS_PARTNEWEND bytes..."
-
-    parted --script "$LOOPDEV" rm "$ROOT_PARTITION"
-    parted --script "$LOOPDEV" unit b mkpart primary ext4 "$ROOTFS_PARTSTART" "$ROOTFS_PARTNEWEND"
-    if [ -n "$PART_NAME" ]; then
-        parted --script "$LOOPDEV" name "$ROOT_PARTITION" "$PART_NAME"
-    fi
-    if [ -n "$PART_FLAGS" ]; then
-        for flag in $(echo "$PART_FLAGS" | tr ',' ' '); do
-            parted --script "$LOOPDEV" set "$ROOT_PARTITION" "$flag" on || true
-        done
-    fi
-
+    (yes Yes | parted ---pretend-input-tty "$LOOPDEV" unit b resizepart "$ROOT_PARTITION" "$ROOTFS_PARTNEWEND" || true)  >/dev/null 2>&1
     parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
     echo ""
+
     sync
     partprobe "$LOOPDEV"
+    if command -v udevadm &>/dev/null; then
+        udevadm settle
+    else
+        sleep 2
+    fi
 
+    echo "Expanding filesystem to fill new partition size..."
+    e2fsck -p -f "$ROOTDEV" || true
     resize2fs "$ROOTDEV" >/dev/null 2>&1
+
     tune2fs -m 1 "$ROOTDEV" >/dev/null 2>&1
 else
     echo "Root partition already at minimal size"
@@ -164,6 +171,7 @@ if [[ "$FREE_SPACE" =~ "free" ]]; then
 
         sgdisk -e "$IMG_FILE" > /dev/null 2>&1
     fi
+    echo ""
 
     parted --script --fix "$IMG_FILE" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
 fi
