@@ -123,14 +123,14 @@ Starting interactive shell...
 Type 'exit' or Ctrl+] three times to return to host system
 ```
 
-## ./shrink.sh <STATE_FILE>
+## ./shrink.sh <STATE_FILE> [buffer_size_mb]
 
 Export image
 
 (You must ./mount.sh first to shrink)
 
 ```sh
-./shrink.sh raspios_lite_arm64_latest.img.state
+./shrink.sh raspios_lite_arm64_latest.img.state 100
 Loading state from raspios_lite_arm64_latest.img.state...
 Loop device: /dev/loop0
 Mount point: ./mnt

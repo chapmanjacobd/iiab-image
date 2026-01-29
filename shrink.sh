@@ -3,7 +3,8 @@ set -euo pipefail
 source ./utils.sh
 
 # Parse arguments
-STATE_FILE="${1:?Error: State file required. Usage: $0 <state_file>}"
+STATE_FILE="${1:?Error: State file required. Usage: $0 <state_file> [buffer_size_mb]}"
+BUFFER_SIZE_MB="${2:-100}"
 if [[ "$STATE_FILE" != *.state ]]; then
   echo "Error: STATE_FILE must end in .state" >&2
   exit 1
@@ -119,7 +120,7 @@ ROOTFS_PARTSIZE=$((ROOTFS_BLOCKCOUNT * ROOTFS_BLOCKSIZE))
 # So: FinalSize * 0.99 = ROOTFS_PARTSIZE + 100MB
 # FinalSize = (ROOTFS_PARTSIZE + 100MB) / 0.99
 # Let's approximate /0.99 with *1.011 for safety
-BUFFER_SIZE=$((100 * 1024 * 1024))
+BUFFER_SIZE=$((BUFFER_SIZE_MB * 1024 * 1024))
 TARGET_USER_SPACE=$((ROOTFS_PARTSIZE + BUFFER_SIZE))
 TOTAL_REQUIRED_SIZE=$(( (TARGET_USER_SPACE * 1011) / 1000 ))
 ROOTFS_PARTNEWEND=$((ROOTFS_PARTSTART + TOTAL_REQUIRED_SIZE - 1))
