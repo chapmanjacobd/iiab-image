@@ -181,10 +181,11 @@ if [ "$ADDITIONAL_MB" -gt 0 ]; then
     echo "Partition resize complete:"
     parted --script "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
     echo ""
+
+    sync
 fi
 
 # Wait for partition devices
-sync
 partprobe -s "$LOOPDEV" || true
 
 if [[ -z "$ROOT_PARTITION" || -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ]]; then
