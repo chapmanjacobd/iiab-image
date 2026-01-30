@@ -52,7 +52,7 @@ touch /.resize-rootfs
 journalctl --vacuum-time=1s
 EOF
 
-systemd-firstboot --root="$MOUNT_DIR" --timezone=UTC --setup-machine-id --force
+systemd-firstboot --root="$MOUNT_DIR" --timezone=UTC --force
 rm -f "$MOUNT_DIR/etc/machine-id"
 
 # Zero-fill boot partition
