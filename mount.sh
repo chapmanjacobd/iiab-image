@@ -18,7 +18,7 @@ if [[ "$IMAGE_SOURCE" =~ ^https?:// ]]; then
 
     # Normalize extensions for naming consistency
     case "$CLEANED_FILENAME" in
-        *.img|*.iso|*.xz|*.gz)
+        *.img|*.iso|*.xz|*.gz|*.zip)
             DOWNLOAD_FILE="$CLEANED_FILENAME"
             ;;
         *.raw)
@@ -42,6 +42,11 @@ case "$ARCHIVE_FILE" in
     *.xz)
         IMG_FILE="${ARCHIVE_FILE%.xz}"
         xz -d -v "$ARCHIVE_FILE"
+        ;;
+    *.zip)
+        IMG_FILE="${ARCHIVE_FILE%.zip}"
+        unzip -o "$ARCHIVE_FILE"
+        rm -f "$ARCHIVE_FILE"
         ;;
     *.tar.gz)
         IMG_FILE="${ARCHIVE_FILE%.tar.gz}.img"
