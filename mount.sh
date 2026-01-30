@@ -176,9 +176,11 @@ if [ "$ADDITIONAL_MB" -gt 0 ]; then
     echo "Resizing filesystem to end of partition"
     if [[ -z "$ROOT_PARTITION" || -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ]]; then
         # losetup unwraps single partitions
+        e2fsck -p -f "${LOOPDEV}"
         resize2fs "${LOOPDEV}"
         e2fsck -p -f "${LOOPDEV}"
     else
+        e2fsck -p -f "${LOOPDEV}p${ROOT_PARTITION}"
         resize2fs "${LOOPDEV}p${ROOT_PARTITION}"
         e2fsck -p -f "${LOOPDEV}p${ROOT_PARTITION}"
     fi
