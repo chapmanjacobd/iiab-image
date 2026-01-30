@@ -53,7 +53,7 @@ journalctl --vacuum-time=1s
 EOF
 
 systemd-firstboot --root="$MOUNT_DIR" --timezone=UTC --force
-rm -f "$MOUNT_DIR/etc/machine-id"
+# rm -f "$MOUNT_DIR/etc/machine-id"
 
 # Zero-fill boot partition
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
