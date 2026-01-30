@@ -37,19 +37,23 @@ fi
 systemd-nspawn -q -D "$MOUNT_DIR" --pipe /bin/bash -eux <<'EOF'
 apt clean
 rm -rf /var/cache/apt/archives/*.deb /var/lib/apt/lists/*
+rm -rf /var/cache/man/*
+rm -rf /var/cache/fontconfig/*
+rm -f /var/log/*log /var/log/*gz
 
-# Remove SSH host keys
 rm -f /etc/ssh/ssh_host_*
 rm -f /var/lib/NetworkManager/*.lease
+rm -f /var/log/nginx/*.log
 
-rm -f /var/log/*log /var/log/*gz
+rm -rf /root/.cache/*
 rm -f /root/.bash_history
 
 touch /.resize-rootfs
+journalctl --vacuum-time=1s
 EOF
 
 systemd-firstboot --root="$MOUNT_DIR" --timezone=UTC --setup-machine-id --force
-echo uninitialized > "$MOUNT_DIR/etc/machine-id"
+rm -f "$MOUNT_DIR/etc/machine-id"
 
 # Zero-fill boot partition
 if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
