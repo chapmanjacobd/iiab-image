@@ -48,7 +48,6 @@ rm -f /var/log/nginx/*.log
 rm -rf /root/.cache/*
 rm -f /root/.bash_history
 
-touch /.resize-rootfs
 journalctl --vacuum-time=1s
 if command -v cloud-init >/dev/null 2>&1; then
     cloud-init clean --logs
