@@ -173,17 +173,25 @@ if [ "$ADDITIONAL_MB" -gt 0 ]; then
         parted --script "$LOOPDEV" resizepart "$ROOT_PARTITION" 100%
     fi
 
+    sync
+    partprobe "$LOOPDEV"
+    if command -v udevadm &>/dev/null; then
+        udevadm settle
+    else
+        sleep 2
+    fi
+
     echo "Resizing filesystem to end of partition"
     if [[ -z "$ROOT_PARTITION" || -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ]]; then
         # losetup unwraps single partitions
-        e2fsck -p -f "${LOOPDEV}"
-        resize2fs "${LOOPDEV}"
-        e2fsck -p -f "${LOOPDEV}"
+        PARTDEV=$(wait_for_device_file "${LOOPDEV}")
     else
-        e2fsck -p -f "${LOOPDEV}p${ROOT_PARTITION}"
-        resize2fs "${LOOPDEV}p${ROOT_PARTITION}"
-        e2fsck -p -f "${LOOPDEV}p${ROOT_PARTITION}"
+        PARTDEV=$(wait_for_device_file "${LOOPDEV}p${ROOT_PARTITION}")
     fi
+
+    e2fsck -p -f "$PARTDEV"
+    resize2fs "$PARTDEV"
+    e2fsck -p -f "$PARTDEV"
 
     echo "Partition resize complete:"
     parted --script "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
@@ -193,7 +201,13 @@ if [ "$ADDITIONAL_MB" -gt 0 ]; then
 fi
 
 # Wait for partition devices
+sync
 partprobe -s "$LOOPDEV" || true
+if command -v udevadm &>/dev/null; then
+    udevadm settle
+else
+    sleep 2
+fi
 
 if [[ -z "$ROOT_PARTITION" || -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ]]; then
     # losetup unwraps single partitions

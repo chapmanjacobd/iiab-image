@@ -105,8 +105,20 @@ echo ""
 parted --script --fix "$LOOPDEV" print free 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
 echo ""
 
+sync
+partprobe "$LOOPDEV"
+if command -v udevadm &>/dev/null; then
+    udevadm settle
+else
+    sleep 2
+fi
+
 echo "Shrinking root filesystem to minimal size..."
-ROOTDEV="${LOOPDEV}p${ROOT_PARTITION}"
+if [ -z "$ROOT_PARTITION" ]; then
+    ROOTDEV=$(wait_for_device_file "${LOOPDEV}")
+else
+    ROOTDEV=$(wait_for_device_file "${LOOPDEV}p${ROOT_PARTITION}")
+fi
 
 e2fsck -p -f "$ROOTDEV"
 resize2fs -M "$ROOTDEV"
