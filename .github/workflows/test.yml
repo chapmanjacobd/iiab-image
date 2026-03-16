@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            parted \
+            jq \
+            systemd-container \
+            psmisc \
+            e2fsprogs \
+            fdisk \
+            udev \
+            debootstrap \
+            dosfstools
+
+      - name: Create Test Image
+        run: |
+          # Create a 1GB sparse image
+          truncate -s 1G test.img
+          sudo parted -s test.img mklabel msdos
+          sudo parted -s test.img mkpart primary fat32 1MiB 64MiB
+          sudo parted -s test.img mkpart primary ext4 64MiB 100%
+          
+          # Setup loop device to format
+          LOOP=$(sudo losetup -fP --show test.img)
+          sudo mkfs.vfat "${LOOP}p1"
+          sudo mkfs.ext4 "${LOOP}p2"
+          
+          # Bootstrap a minimal system
+          MOUNT=$(mktemp -d)
+          sudo mount "${LOOP}p2" "$MOUNT"
+          # We use --variant=minbase to keep it small and fast
+          sudo debootstrap --variant=minbase --include=bash,coreutils,util-linux,systemd stable "$MOUNT" http://deb.debian.org/debian/
+          
+          # Prepare for shrink.sh requirements
+          sudo mkdir -p "$MOUNT/boot/firmware"
+          sudo mount "${LOOP}p1" "$MOUNT/boot/firmware"
+          sudo touch "$MOUNT/boot/firmware/config.txt"
+          
+          sudo umount "$MOUNT/boot/firmware"
+          sudo umount "$MOUNT"
+          sudo losetup -d "$LOOP"
+
+      - name: Test mount.sh
+        run: |
+          # Mount the image and expand it to 1.5GB
+          sudo ./mount.sh test.img 1500 1 2
+          if [ ! -f test.img.state ]; then
+            echo "State file test.img.state not found!"
+            exit 1
+          fi
+
+      - name: Test chroot.sh
+        run: |
+          # Verify we can run a command inside the image
+          sudo ./chroot.sh test.img.state ls -la /
+          sudo ./chroot.sh test.img.state uname -a
+
+      - name: Test shrink.sh
+        run: |
+          # Shrink it back down with a 50MB buffer
+          # This will also test the fix for the race condition
+          sudo ./shrink.sh test.img.state 50
+
+      - name: Final check
+        run: |
+          ls -lh test.img
+          sudo parted -s test.img print
+          # Verify the image is smaller than the 1.5GB we expanded it to
+          SIZE=$(stat -c %s test.img)
+          if [ "$SIZE" -gt 1200000000 ]; then
+            echo "Image size ($SIZE) is larger than expected after shrink"
+            exit 1
+          fi

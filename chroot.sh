@@ -60,10 +60,18 @@ if ! command -v systemd-nspawn &> /dev/null; then
 fi
 
 if [[ "${COMMAND[0]}" = "/bin/bash" ]] || [[ "${COMMAND[0]}" = "bash" ]]; then
-    echo "Starting interactive shell..."
-    echo "Type 'exit' or Ctrl+] three times to return to the host"
-    echo ""
-    exec systemd-nspawn "${NSPAWN_OPTS[@]}" "${FINAL_COMMAND[@]}"
+    if [ ! -t 0 ]; then
+        NSPAWN_OPTS+=("--pipe")
+    fi
+    echo "Starting shell..."
+    if [ -t 0 ]; then
+        echo "Type 'exit' or Ctrl+] three times to return to the host"
+        echo ""
+    fi
+    exec systemd-nspawn "${NSPAWN_OPTS[@]}" "${COMMAND[@]}"
 else
-    exec systemd-nspawn "${NSPAWN_OPTS[@]}" "${FINAL_COMMAND[@]}"
+    if [ ! -t 0 ]; then
+        NSPAWN_OPTS+=("--pipe")
+    fi
+    exec systemd-nspawn "${NSPAWN_OPTS[@]}" "${COMMAND[@]}"
 fi
