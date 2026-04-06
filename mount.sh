@@ -21,9 +21,6 @@ if [[ "$IMAGE_SOURCE" =~ ^https?:// ]]; then
         *.img|*.iso|*.xz|*.gz|*.zip)
             DOWNLOAD_FILE="$CLEANED_FILENAME"
             ;;
-        *.raw)
-            DOWNLOAD_FILE="${CLEANED_FILENAME%.raw}.img"
-            ;;
         *)
             DOWNLOAD_FILE="${CLEANED_FILENAME}.img.xz"
             ;;
@@ -97,13 +94,15 @@ if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
     json_output=$(parted --script "$IMG_FILE" unit B print --json 2>/dev/null || true)
 
     json_partitions=$(echo "$json_output" | jq -c '.disk.partitions' 2>/dev/null)
-    partition_count=$(echo "$json_partitions" | jq 'length')
     if [[ -z "$json_partitions" || "$json_partitions" == "null" ]]; then
         echo "No partitions found. Mounting whole block device" >&2
         ROOT_PARTITION=""
-    elif [[ "$partition_count" -eq 1 ]]; then
+        partition_count=0
+    elif [[ "$(echo "$json_partitions" | jq 'length')" -eq 1 ]]; then
+        partition_count=1
         ROOT_PARTITION=$(echo "$json_partitions" | jq -r '.[] | .number')
-    elif [[ "$partition_count" -gt 1 ]]; then
+    else
+        partition_count=$(echo "$json_partitions" | jq 'length')
         if [[ -z "$BOOT_PARTITION" ]]; then
             BOOT_PARTITION=$(echo "$json_partitions" | jq -r '.[] | select((.flags // []) | contains(["boot"])) | .number')
         fi
@@ -119,7 +118,7 @@ if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
 
         if [[ "$partition_count" -eq 2 && -z "$BOOT_PARTITION" ]]; then
             BOOT_PARTITION=$(echo "$json_partitions" | jq -r '
-                map(select((.flags // []) )) |
+                map(select((.flags // []) | contains(["boot"]))) |
                 sort_by(.start | sub("B$"; "") | tonumber) |
                 first |
                 .number
@@ -135,6 +134,11 @@ if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
         echo "Using boot partition $BOOT_PARTITION"
         echo "Using root partition $ROOT_PARTITION"
     fi
+else
+    # Partitions provided explicitly - still need partition_count for later checks
+    json_output=$(parted --script "$IMG_FILE" unit B print --json 2>/dev/null || true)
+    json_partitions=$(echo "$json_output" | jq -c '.disk.partitions' 2>/dev/null)
+    partition_count=$(echo "$json_partitions" | jq 'length')
 fi
 
 CURRENT_BYTES=$(stat -c %s "$IMG_FILE")
@@ -182,7 +186,7 @@ if [ "$ADDITIONAL_MB" -gt 0 ]; then
     fi
 
     echo "Resizing filesystem to end of partition"
-    if [[ -z "$ROOT_PARTITION" || -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ]]; then
+    if [[ -z "$ROOT_PARTITION" || ( -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ) ]]; then
         # losetup unwraps single partitions
         PARTDEV=$(wait_for_device_file "${LOOPDEV}")
     else
@@ -209,7 +213,7 @@ else
     sleep 2
 fi
 
-if [[ -z "$ROOT_PARTITION" || -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ]]; then
+if [[ -z "$ROOT_PARTITION" || ( -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ) ]]; then
     # losetup unwraps single partitions
     ROOTDEV=$(wait_for_device_file "${LOOPDEV}")
 else
@@ -261,6 +265,6 @@ echo "Mount point: $MOUNT_DIR"
 echo "State file: $STATE_FILE"
 echo ""
 echo "To enter container: ./chroot.sh $STATE_FILE"
-echo "To repack, run: ./repack.sh $STATE_FILE"
+echo "To repack, run: ./shrink.sh $STATE_FILE"
 echo "To unmount, run: ./unmount.sh $STATE_FILE"
 echo "=========================================="

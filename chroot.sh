@@ -6,7 +6,9 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 STATE_FILE="${1:?Error: State file required. Usage: $0 <state_file> [--boot] [command]}"
-shift || true
+if [[ $# -gt 1 ]]; then
+    shift
+fi
 if [[ "$STATE_FILE" != *.state ]]; then
   echo "Error: STATE_FILE must end in .state" >&2
   exit 1
@@ -59,19 +61,17 @@ if ! command -v systemd-nspawn &> /dev/null; then
     apt-get install -y systemd-container
 fi
 
+# Add --pipe if stdin is not a terminal
+if [ ! -t 0 ]; then
+    NSPAWN_OPTS+=("--pipe")
+fi
+
 if [[ "${COMMAND[0]}" = "/bin/bash" ]] || [[ "${COMMAND[0]}" = "bash" ]]; then
-    if [ ! -t 0 ]; then
-        NSPAWN_OPTS+=("--pipe")
-    fi
     echo "Starting shell..."
     if [ -t 0 ]; then
         echo "Type 'exit' or Ctrl+] three times to return to the host"
         echo ""
     fi
-    exec systemd-nspawn "${NSPAWN_OPTS[@]}" "${COMMAND[@]}"
-else
-    if [ ! -t 0 ]; then
-        NSPAWN_OPTS+=("--pipe")
-    fi
-    exec systemd-nspawn "${NSPAWN_OPTS[@]}" "${COMMAND[@]}"
 fi
+
+exec systemd-nspawn "${NSPAWN_OPTS[@]}" "${COMMAND[@]}"

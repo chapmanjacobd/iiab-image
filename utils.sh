@@ -18,8 +18,16 @@ download_file() {
             --allow-overwrite=true \
             --dir="$output.dir" \
             "$url"
-        find "$output.dir" -type f -exec mv {} "$output" \;
-        rmdir "$output.dir"
+        # Move the first file found in the download directory to the output path
+        local first_file
+        first_file=$(find "$output.dir" -type f -print -quit 2>/dev/null)
+        if [[ -n "$first_file" ]]; then
+            mv "$first_file" "$output"
+            # Remove any remaining files in the directory
+            rm -rf "$output.dir"
+        else
+            rmdir "$output.dir"
+        fi
     elif command -v curl &> /dev/null; then
         echo "aria2c not found. Falling back to curl..."
         curl -L --progress-bar -o "$output" "$url"
@@ -57,7 +65,7 @@ unmount_with_retries() {
     fi
 
     echo "Unmounting $mountpoint..."
-    while ! umount $force "$mountpoint" 2>/dev/null; do
+    while ! umount "$force" "$mountpoint" 2>/dev/null; do
         retries=$((retries + 1))
         if [ $retries -ge $max_retries ]; then
             echo "Error: Could not unmount $mountpoint after $retries attempts" >&2

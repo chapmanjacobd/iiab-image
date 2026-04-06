@@ -28,20 +28,20 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Unmount boot partition if it exists and is mounted
-if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "${ROOT_PARTITION:-2}" ]; then
-    if [ -n "${BOOT_MOUNT:-}" ] && [ -d "$BOOT_MOUNT" ]; then
+if [ -n "${BOOT_PARTITION:-}" ] && [ "$BOOT_PARTITION" != "${ROOT_PARTITION:-}" ]; then
+    if [ -n "${BOOT_MOUNT:-}" ] && mountpoint -q "$BOOT_MOUNT" 2>/dev/null; then
         unmount_with_retries "$BOOT_MOUNT"
-    elif [ -d "$MOUNT_DIR/boot/firmware" ]; then
+    elif mountpoint -q "$MOUNT_DIR/boot/firmware" 2>/dev/null; then
         unmount_with_retries "$MOUNT_DIR/boot/firmware"
-    elif [ -d "$MOUNT_DIR/boot/efi" ]; then
+    elif mountpoint -q "$MOUNT_DIR/boot/efi" 2>/dev/null; then
         unmount_with_retries "$MOUNT_DIR/boot/efi"
-    elif [ -d "$MOUNT_DIR/boot" ]; then
+    elif mountpoint -q "$MOUNT_DIR/boot" 2>/dev/null; then
         unmount_with_retries "$MOUNT_DIR/boot"
     fi
 fi
 
 # Unmount root filesystem
-if [ -d "$MOUNT_DIR" ]; then
+if mountpoint -q "$MOUNT_DIR" 2>/dev/null; then
     unmount_with_retries "$MOUNT_DIR"
     rmdir "$MOUNT_DIR" || true
 fi
