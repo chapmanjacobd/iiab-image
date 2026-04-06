@@ -65,7 +65,12 @@ unmount_with_retries() {
     fi
 
     echo "Unmounting $mountpoint..."
-    while ! umount "$force" "$mountpoint" 2>/dev/null; do
+    while true; do
+        if [[ -n "$force" ]]; then
+            umount --force "$mountpoint" 2>/dev/null && break
+        else
+            umount "$mountpoint" 2>/dev/null && break
+        fi
         retries=$((retries + 1))
         if [ $retries -ge $max_retries ]; then
             echo "Error: Could not unmount $mountpoint after $retries attempts" >&2
