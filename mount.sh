@@ -7,8 +7,8 @@ DEFAULT_URL="https://downloads.raspberrypi.org/raspios_lite_arm64_latest"
 
 IMAGE_SOURCE="${1:-$DEFAULT_URL}"
 TARGET_MB="${2:-5000}"
-BOOT_PARTITION="${3:-0}"
-ROOT_PARTITION="${4:-0}"
+BOOT_PARTITION="${3:-}"
+ROOT_PARTITION="${4:-}"
 
 if [[ "$IMAGE_SOURCE" =~ ^https?:// ]]; then
     BASE_FILENAME=$(basename "$IMAGE_SOURCE")
@@ -20,6 +20,9 @@ if [[ "$IMAGE_SOURCE" =~ ^https?:// ]]; then
     case "$CLEANED_FILENAME" in
         *.img|*.iso|*.xz|*.gz|*.zip)
             DOWNLOAD_FILE="$CLEANED_FILENAME"
+            ;;
+        *.raw)
+            DOWNLOAD_FILE="${CLEANED_FILENAME%.raw}.img"
             ;;
         *)
             DOWNLOAD_FILE="${CLEANED_FILENAME}.img.xz"
@@ -83,31 +86,29 @@ if command -v sfdisk &> /dev/null; then
     sfdisk -r "$IMG_FILE"
 fi
 
-if [[ "$BOOT_PARTITION" -eq 0 || "$ROOT_PARTITION" -eq 0 ]]; then
+if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
     if ! command -v jq &>/dev/null; then
         echo "Installing jq for JSON parsing..."
         apt-get update
         apt-get install -y jq
     fi
 
-    echo "Partition numbers not explicitly set. Attempting to auto-detect $IMG_FILE..." >&2
+    echo "Partition numbers not explicity set. Attempting to auto-detect $IMG_FILE..." >&2
     json_output=$(parted --script "$IMG_FILE" unit B print --json 2>/dev/null || true)
 
     json_partitions=$(echo "$json_output" | jq -c '.disk.partitions' 2>/dev/null)
+    partition_count=$(echo "$json_partitions" | jq 'length')
     if [[ -z "$json_partitions" || "$json_partitions" == "null" ]]; then
         echo "No partitions found. Mounting whole block device" >&2
         ROOT_PARTITION=""
-        partition_count=0
-    elif [[ "$(echo "$json_partitions" | jq 'length')" -eq 1 ]]; then
-        partition_count=1
+    elif [[ "$partition_count" -eq 1 ]]; then
         ROOT_PARTITION=$(echo "$json_partitions" | jq -r '.[] | .number')
-    else
-        partition_count=$(echo "$json_partitions" | jq 'length')
-        if [[ "$BOOT_PARTITION" -eq 0 ]]; then
+    elif [[ "$partition_count" -gt 1 ]]; then
+        if [[ -z "$BOOT_PARTITION" ]]; then
             BOOT_PARTITION=$(echo "$json_partitions" | jq -r '.[] | select((.flags // []) | contains(["boot"])) | .number')
         fi
 
-        if [[ "$ROOT_PARTITION" -eq 0 ]]; then
+        if [[ -z "$ROOT_PARTITION" ]]; then
             ROOT_PARTITION=$(echo "$json_partitions" | jq -r '
                 map(select((.flags // []) | contains(["boot"]) | not)) |
                 sort_by(.start | sub("B$"; "") | tonumber) |
@@ -116,16 +117,16 @@ if [[ "$BOOT_PARTITION" -eq 0 || "$ROOT_PARTITION" -eq 0 ]]; then
             ')
         fi
 
-        if [[ "$partition_count" -eq 2 && "$BOOT_PARTITION" -eq 0 ]]; then
+        if [[ "$partition_count" -eq 2 && -z "$BOOT_PARTITION" ]]; then
             BOOT_PARTITION=$(echo "$json_partitions" | jq -r '
-                map(select((.flags // []) | contains(["boot"]))) |
+                map(select((.flags // []) )) |
                 sort_by(.start | sub("B$"; "") | tonumber) |
                 first |
                 .number
             ')
         fi
 
-        if [[ "$BOOT_PARTITION" -eq 0 || "$ROOT_PARTITION" -eq 0 ]]; then
+        if [[ -z "$BOOT_PARTITION" || -z "$ROOT_PARTITION" ]]; then
             echo "Error: Auto-detection failed. Could not uniquely identify partitions after parsing." >&2
             parted --script "$IMG_FILE" print 2>/dev/null | awk '/^Number/ {p=1} p && NF {print}'
             exit 1
@@ -134,11 +135,6 @@ if [[ "$BOOT_PARTITION" -eq 0 || "$ROOT_PARTITION" -eq 0 ]]; then
         echo "Using boot partition $BOOT_PARTITION"
         echo "Using root partition $ROOT_PARTITION"
     fi
-else
-    # Partitions provided explicitly - still need partition_count for later checks
-    json_output=$(parted --script "$IMG_FILE" unit B print --json 2>/dev/null || true)
-    json_partitions=$(echo "$json_output" | jq -c '.disk.partitions' 2>/dev/null)
-    partition_count=$(echo "$json_partitions" | jq 'length')
 fi
 
 CURRENT_BYTES=$(stat -c %s "$IMG_FILE")
@@ -186,7 +182,7 @@ if [ "$ADDITIONAL_MB" -gt 0 ]; then
     fi
 
     echo "Resizing filesystem to end of partition"
-    if [[ "$partition_count" -le 1 ]]; then
+    if [[ -z "$ROOT_PARTITION" || -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ]]; then
         # losetup unwraps single partitions
         PARTDEV=$(wait_for_device_file "${LOOPDEV}")
     else
@@ -213,7 +209,7 @@ else
     sleep 2
 fi
 
-if [[ "$partition_count" -le 1 ]]; then
+if [[ -z "$ROOT_PARTITION" || -z "$BOOT_PARTITION" && "$partition_count" -eq 1 ]]; then
     # losetup unwraps single partitions
     ROOTDEV=$(wait_for_device_file "${LOOPDEV}")
 else
@@ -221,7 +217,7 @@ else
 fi
 echo "Root device: $ROOTDEV"
 
-if [[ "$BOOT_PARTITION" -ne 0 ]] && [[ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]]; then
+if [ "$BOOT_PARTITION" != "" ] && [ "$BOOT_PARTITION" != "$ROOT_PARTITION" ]; then
     BOOTDEV=$(wait_for_device_file "${LOOPDEV}p${BOOT_PARTITION}")
     echo "Boot device: $BOOTDEV"
 else
@@ -252,8 +248,8 @@ cat > "$STATE_FILE" <<EOF
 LOOPDEV=$LOOPDEV
 MOUNT_DIR=$MOUNT_DIR
 IMG_FILE=$IMG_FILE
-ROOT_PARTITION=${ROOT_PARTITION:-2}
-BOOT_PARTITION=${BOOT_PARTITION:-1}
+ROOT_PARTITION=$ROOT_PARTITION
+BOOT_PARTITION=$BOOT_PARTITION
 BOOT_MOUNT=${BOOT_MOUNT:-}
 EOF
 
@@ -265,6 +261,6 @@ echo "Mount point: $MOUNT_DIR"
 echo "State file: $STATE_FILE"
 echo ""
 echo "To enter container: ./chroot.sh $STATE_FILE"
-echo "To repack, run: ./shrink.sh $STATE_FILE"
+echo "To repack, run: ./repack.sh $STATE_FILE"
 echo "To unmount, run: ./unmount.sh $STATE_FILE"
 echo "=========================================="

@@ -27,7 +27,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 IIAB_YML_DEST="$MOUNT_DIR/etc/iiab/local_vars.yml"
-mkdir -p "$(dirname "$IIAB_YML_DEST")"
+mkdir -p $(dirname "$IIAB_YML_DEST")
 if [[ "$IIAB_YML_SOURCE" =~ ^https?:// ]]; then
     if download_file "$IIAB_YML_SOURCE" "$IIAB_YML_DEST"; then
         echo "Downloaded **$IIAB_YML_SOURCE** to **$IIAB_YML_DEST**"
@@ -75,29 +75,12 @@ fi
 # Detect primary interface for NAT
 EXT_IF=$(ip route | grep default | awk '{print $5}' | head -n1)
 
-if [[ -z "$EXT_IF" ]]; then
-    echo "Error: Could not detect default network interface. Is there an active network connection?" >&2
-    exit 1
-fi
+# Enable Masquerading
+iptables -t nat -A POSTROUTING -o "$EXT_IF" -j MASQUERADE
 
-echo "Using network interface: $EXT_IF for NAT"
-
-# Enable Masquerading (idempotent - check if rule exists first)
-if ! iptables -t nat -C POSTROUTING -o "$EXT_IF" -j MASQUERADE 2>/dev/null; then
-    iptables -t nat -A POSTROUTING -o "$EXT_IF" -j MASQUERADE
-    echo "Added MASQUERADE rule for $EXT_IF"
-fi
-
-# Explicitly allow forwarding for systemd-nspawn virtual interfaces (idempotent)
-if ! iptables -C FORWARD -i ve-+ -o "$EXT_IF" -j ACCEPT 2>/dev/null; then
-    iptables -A FORWARD -i ve-+ -o "$EXT_IF" -j ACCEPT
-    echo "Added FORWARD rule for ve-+ -> $EXT_IF"
-fi
-
-if ! iptables -C FORWARD -i "$EXT_IF" -o ve-+ -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null; then
-    iptables -A FORWARD -i "$EXT_IF" -o ve-+ -m state --state RELATED,ESTABLISHED -j ACCEPT
-    echo "Added FORWARD rule for $EXT_IF -> ve-+"
-fi
+# Explicitly allow forwarding for systemd-nspawn virtual interfaces
+iptables -A FORWARD -i ve-+ -o "$EXT_IF" -j ACCEPT
+iptables -A FORWARD -i "$EXT_IF" -o ve-+ -m state --state RELATED,ESTABLISHED -j ACCEPT
 
 systemd-firstboot --root="$MOUNT_DIR" --delete-root-password --force
 
@@ -109,6 +92,9 @@ cleanup() {
     echo "Attempting cleanup of temporary files..." >&2
     if [ -n "${EXPECT_SCRIPT:-}" ] && [ -f "$EXPECT_SCRIPT" ]; then
         rm -f "$EXPECT_SCRIPT"
+    fi
+    if [ -n "${IIAB_EXPECT_SCRIPT:-}" ] && [ -f "$IIAB_EXPECT_SCRIPT" ]; then
+        rm -f "$IIAB_EXPECT_SCRIPT"
     fi
     pgrep -fa "$MOUNT_DIR" || true
 }
